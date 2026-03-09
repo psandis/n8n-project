@@ -8,7 +8,7 @@ A collection of self-hosted n8n automation workflows.
 |--------|-------------|--------|
 | [gh-digest](./gh-digest/) | Daily GitHub activity digest across repos | ✅ Live |
 | [ai-news-digest](./ai-news-digest/) | Daily AI/tech news digest from 9 RSS sources | ✅ Live |
-| [my-meeting-notes](./my-meeting-notes/) | Paste transcript → Claude summarizes → saved to file/Notion | 🚧 In progress |
+| [my-meeting-notes](./my-meeting-notes/) | POST transcript via webhook → structured meeting notes + email | ✅ Live |
 
 ## Setup
 
