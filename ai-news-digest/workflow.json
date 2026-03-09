@@ -1,0 +1,233 @@
+{
+  "name": "AI News Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000001",
+      "name": "Morning 7:30AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, -120]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000006",
+      "name": "Midday 12:30PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "path": "ai-news-digest",
+        "httpMethod": "GET",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000007",
+      "name": "Webhook On-Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 120],
+      "webhookId": "ai-news-digest"
+    },
+    {
+      "parameters": {
+        "jsCode": "const feeds = [\n  { name: 'Hacker News', url: 'https://hnrss.org/newest?q=AI+OR+artificial+intelligence+OR+LLM+OR+GPT+OR+Claude&points=50' },\n  { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/technology-lab' },\n  { name: 'TechCrunch AI', url: 'https://techcrunch.com/category/artificial-intelligence/feed/' },\n  { name: 'The Verge AI', url: 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml' },\n  { name: 'Google AI Blog', url: 'https://blog.google/technology/ai/rss/' },\n  { name: 'DeepMind Blog', url: 'https://deepmind.google/blog/rss.xml' },\n  { name: 'Anthropic Blog', url: 'https://www.anthropic.com/rss.xml' },\n  { name: 'OpenAI Blog', url: 'https://openai.com/blog/rss.xml' },\n  { name: \"Ben's Bites\", url: 'https://bensbites.beehiiv.com/feed' }\n];\n\nconst cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);\nconst allArticles = [];\nconst errors = [];\n\nfunction extractText(xml, tag) {\n  const regex = new RegExp(`<${tag}[^>]*><!\\\\[CDATA\\\\[([\\\\s\\\\S]*?)\\\\]\\\\]>|<${tag}[^>]*>([\\\\s\\\\S]*?)</${tag}>`, 'gi');\n  const matches = [];\n  let m;\n  while ((m = regex.exec(xml)) !== null) {\n    matches.push((m[1] || m[2] || '').trim());\n  }\n  return matches;\n}\n\nfunction extractLinks(xml) {\n  const links = [];\n  const linkTagRegex = /<link[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|<link[^>]*>([\\s\\S]*?)<\\/link>/gi;\n  let m;\n  while ((m = linkTagRegex.exec(xml)) !== null) {\n    links.push((m[1] || m[2] || '').trim());\n  }\n  const atomLinkRegex = /<link[^>]*href=[\"']([^\"']+)[\"'][^>]*\\/?>(?:<\\/link>)?/gi;\n  while ((m = atomLinkRegex.exec(xml)) !== null) {\n    if (m[1] && !m[1].includes('application/')) {\n      links.push(m[1].trim());\n    }\n  }\n  return links;\n}\n\nfor (const feed of feeds) {\n  try {\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url: feed.url,\n      returnFullResponse: false,\n      headers: {\n        'User-Agent': 'Mozilla/5.0 (compatible; n8n-news-digest/1.0)',\n        'Accept': 'application/rss+xml, application/xml, text/xml, application/atom+xml, */*'\n      },\n      timeout: 15000\n    });\n\n    const xml = typeof response === 'string' ? response : JSON.stringify(response);\n    const itemRegex = /<item[\\s>][\\s\\S]*?<\\/item>|<entry[\\s>][\\s\\S]*?<\\/entry>/gi;\n    const items = xml.match(itemRegex) || [];\n\n    let feedCount = 0;\n    const MAX_PER_FEED = 10;\n    for (const item of items) {\n      if (feedCount >= MAX_PER_FEED) break;\n      const titles = extractText(item, 'title');\n      const title = titles[0] || 'Untitled';\n      const itemLinks = extractLinks(item);\n      const link = itemLinks[0] || '';\n      const descriptions = extractText(item, 'description').concat(extractText(item, 'summary')).concat(extractText(item, 'content'));\n      let description = descriptions[0] || '';\n      description = description.replace(/<[^>]+>/g, '').substring(0, 300);\n      const pubDates = extractText(item, 'pubDate').concat(extractText(item, 'published')).concat(extractText(item, 'updated'));\n      const pubDateStr = pubDates[0] || '';\n      const pubDate = pubDateStr ? new Date(pubDateStr) : null;\n\n      if (pubDate && pubDate >= cutoff) {\n        allArticles.push({ source: feed.name, title, link, description, pubDate: pubDate.toISOString() });\n        feedCount++;\n      } else if (!pubDate) {\n        allArticles.push({ source: feed.name, title, link, description, pubDate: 'unknown' });\n        feedCount++;\n      }\n    }\n  } catch (e) {\n    errors.push({ source: feed.name, error: e.message || String(e) });\n  }\n}\n\nallArticles.sort((a, b) => {\n  if (a.pubDate === 'unknown') return 1;\n  if (b.pubDate === 'unknown') return -1;\n  return new Date(b.pubDate) - new Date(a.pubDate);\n});\n\nconst bySource = {};\nfor (const article of allArticles) {\n  if (!bySource[article.source]) bySource[article.source] = [];\n  bySource[article.source].push(article);\n}\n\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nreturn [{ json: {\n  dateLabel,\n  totalArticles: allArticles.length,\n  articles: allArticles,\n  bySource,\n  errors,\n  generatedAt: new Date().toISOString()\n} }];"
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000002",
+      "name": "Fetch RSS Feeds",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst prompt = `You are an expert AI news analyst. Analyze these ${data.totalArticles} articles and create a high-value daily briefing.\n\nARTICLES:\n${JSON.stringify(data.articles)}\n\n${data.errors.length > 0 ? 'Feed errors: ' + JSON.stringify(data.errors) : ''}\n\nRULES:\n- Focus on the most important and impactful stories. Skip low-value or repetitive noise.\n- Merge duplicate stories (same event from different sources) into one entry, listing all sources.\n- Organize by topic, not by source.\n- Aim for 10-15 top stories total. Quality over quantity.\n- Rate each story: HIGH = industry-changing, MED = notable development, LOW = incremental/niche.\n\nFORMAT:\n\n# AI News Digest - ${data.dateLabel}\n\n## TL;DR - 30 Second Briefing\n3-4 bullet points. Only the stories that matter most. Write like you're briefing a busy exec.\n\n## The Big Picture\n2-3 sentences connecting today's stories into broader narratives (e.g. safety trends, market shifts, regulatory patterns). This is the insight you can't get from just reading headlines.\n\n## [Topic Category]\n- **[HIGH/MED/LOW]** [Article title](url) (Source1, Source2)\n  One-line summary of why it matters\n\nCategories: AI Policy & Regulation, AI Industry & Business, AI Products & Launches, AI Research & Papers, AI Infrastructure & Tools, AI Commentary & Opinion, Other AI News\n\nSkip empty categories.\n\n## Worth Watching\nEmerging trends and threads to follow based on today's news.\n\nOutput only the markdown.`;\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 4096,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body } }];"
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000008",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000003",
+      "name": "Claude Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst markdown = response.content[0].text;\n\n// Parse markdown into email-safe HTML (table-based, no CSS3)\nconst lines = markdown.split('\\n');\nlet bodyHtml = '';\nlet inList = false;\nlet sectionCount = 0;\n\nfunction inlineStyles(text) {\n  let s = text;\n  s = s.replace(/\\*\\*HIGH\\*\\*/g, '<span style=\"background-color:#dc2626; color:#ffffff; padding:2px 8px; font-size:11px; font-weight:bold;\">HIGH</span>');\n  s = s.replace(/\\*\\*MED\\*\\*/g, '<span style=\"background-color:#d97706; color:#ffffff; padding:2px 8px; font-size:11px; font-weight:bold;\">MED</span>');\n  s = s.replace(/\\*\\*LOW\\*\\*/g, '<span style=\"background-color:#6b7280; color:#ffffff; padding:2px 8px; font-size:11px; font-weight:bold;\">LOW</span>');\n  s = s.replace(/\\*\\*(.+?)\\*\\*/g, '<strong style=\"color:#e2e8f0;\">$1</strong>');\n  s = s.replace(/\\*(.+?)\\*/g, '<em>$1</em>');\n  s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href=\"$2\" style=\"color:#a78bfa; text-decoration:underline;\">$1</a>');\n  return s;\n}\n\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    continue;\n  }\n  if (trimmed.startsWith('### ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    bodyHtml += `<h3 style=\"color:#e2e8f0; font-size:16px; margin:18px 0 6px 0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(4)}</h3>`;\n  } else if (trimmed.startsWith('## ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    sectionCount++;\n    const border = sectionCount > 1 ? '<tr><td style=\"padding:12px 0 0 0; border-top:1px solid #2d1b69;\"></td></tr>' : '';\n    bodyHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">${border}<tr><td style=\"padding:${sectionCount > 1 ? '16' : '0'}px 0 10px 0;\"><h2 style=\"color:#c4b5fd; font-size:20px; margin:0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(3)}</h2></td></tr></table>`;\n  } else if (trimmed.startsWith('# ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n  } else if (trimmed.startsWith('- ')) {\n    if (!inList) { bodyHtml += '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">'; inList = true; }\n    const content = inlineStyles(trimmed.slice(2));\n    bodyHtml += `<tr><td style=\"padding:6px 0;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"4\" style=\"background-color:#7c3aed;\"></td><td style=\"padding:10px 14px; background-color:#1a1030; font-family:Arial,sans-serif; font-size:14px; color:#cbd5e1; line-height:1.5;\">${content}</td></tr></table></td></tr>`;\n  } else {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    bodyHtml += `<p style=\"color:#cbd5e1; line-height:1.6; margin:8px 0; font-family:Arial,sans-serif; font-size:14px;\">${inlineStyles(trimmed)}</p>`;\n  }\n}\nif (inList) bodyHtml += '</table>';\n\nconst dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\n\nconst html = `<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>AI News Digest</title></head><body style=\"margin:0; padding:0; background-color:#0f0b1a; -webkit-text-size-adjust:100%;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0f0b1a;\"><tr><td align=\"center\" style=\"padding:0;\">\n<table width=\"660\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:660px; width:100%;\">\n  <!-- Header -->\n  <tr><td style=\"background-color:#1e1040; padding:36px 32px 28px 32px; border-bottom:3px solid #7c3aed;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>\n      <td style=\"font-family:Arial,sans-serif;\">\n        <div style=\"font-size:12px; color:#a78bfa; text-transform:uppercase; letter-spacing:3px; font-weight:bold; margin-bottom:10px;\">&#x1F916; Daily Intelligence</div>\n        <h1 style=\"color:#f1f5f9; font-size:26px; margin:0 0 6px 0; font-weight:bold; font-family:Arial,sans-serif;\">AI News Digest</h1>\n        <div style=\"color:#94a3b8; font-size:13px; font-family:Arial,sans-serif;\">${dateLabel}</div>\n      </td>\n      <td width=\"80\" valign=\"top\" style=\"text-align:right; font-size:48px; color:#2d1b69;\">&#x2B22;</td>\n    </tr></table>\n  </td></tr>\n  <!-- Body -->\n  <tr><td style=\"background-color:#130f24; padding:28px 32px;\">\n    ${bodyHtml}\n  </td></tr>\n  <!-- Footer -->\n  <tr><td style=\"background-color:#0f0b1a; padding:20px 32px; border-top:1px solid #2d1b69; text-align:center; font-family:Arial,sans-serif;\">\n    <div style=\"color:#64748b; font-size:12px;\">Powered by n8n</div>\n    <div style=\"color:#475569; font-size:11px; margin-top:4px;\">9 RSS sources &middot; Curated daily</div>\n  </td></tr>\n</table>\n</td></tr></table>\n</body></html>`;\n\nconst buffer = Buffer.from(markdown, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, 'ai-news.md', 'text/markdown');\n\nreturn [{ json: { markdown, html }, binary: { data: binaryData } }];"
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000004",
+      "name": "Prepare File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 0]
+    },
+    {
+      "parameters": {
+        "fileName": "=/home/node/output/ai-news/ai-news-{{ $now.format('yyyy-MM-dd') }}.md",
+        "dataPropertyName": "data"
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000005",
+      "name": "Save News Digest",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1200, -80]
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-email@gmail.com",
+        "sendTo": "your-email@gmail.com",
+        "subject": "=AI News Digest - {{ $now.format('yyyy-MM-dd') }}",
+        "emailType": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-0001-4000-8000-000000000009",
+      "name": "Email Digest",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1200, 80],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "Morning 7:30AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch RSS Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Midday 12:30PM": {
+      "main": [
+        [
+          {
+            "node": "Fetch RSS Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook On-Demand": {
+      "main": [
+        [
+          {
+            "node": "Fetch RSS Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch RSS Feeds": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summarize": {
+      "main": [
+        [
+          {
+            "node": "Prepare File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare File": {
+      "main": [
+        [
+          {
+            "node": "Save News Digest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 3,
+  "pinData": {}
+}

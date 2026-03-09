@@ -6,9 +6,9 @@ A collection of self-hosted n8n automation workflows.
 
 | Folder | Description | Status |
 |--------|-------------|--------|
-| [gh-digest](./gh-digest/) | Daily GitHub activity digest across repos | 🚧 In progress |
+| [gh-digest](./gh-digest/) | Daily GitHub activity digest across repos | ✅ Live |
+| [ai-news-digest](./ai-news-digest/) | Daily AI/tech news digest from 9 RSS sources | 🚧 In progress |
 | [my-meeting-notes](./my-meeting-notes/) | Paste transcript → Claude summarizes → saved to file/Notion | 🚧 In progress |
-| [linkedin-feed](./linkedin-feed/) | LinkedIn content automation | 🚧 In progress |
 
 ## Setup
 
