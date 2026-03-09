@@ -1,0 +1,55 @@
+2026-01-15 Product Roadmap Review
+
+ok so let's get started, I think everyone's here. Sarah you're on mute btw
+
+Sarah: oh sorry, yeah I'm here. Thanks for setting this up Mike
+
+Mike: no problem. So the main thing today is Q1 priorities. We got a lot of feedback from the beta launch and we need to figure out what to tackle first
+
+Sarah: right so the big ones from customer feedback are the dashboard performance issues and the mobile experience. Like literally every enterprise customer has mentioned the dashboard being slow
+
+James: yeah I looked into the dashboard thing last week. The main bottleneck is the analytics queries, they're doing full table scans on the events table. I think we can get a 10x improvement with proper indexing and maybe moving to materialized views
+
+Mike: ok that sounds promising. How long would that take?
+
+James: probably 2-3 weeks if I focus on it. But we'd need to coordinate with the data team on the migration
+
+Sarah: I think we should prioritize that over mobile honestly. The mobile complaints are more like nice-to-haves but the dashboard perf is literally blocking enterprise deals
+
+Mike: agreed. Let's make dashboard performance the top priority for Q1. James can you own that?
+
+James: yeah definitely. I'll put together a technical plan by end of this week
+
+Mike: perfect. What about the API rate limiting issue? I saw a few tickets about that
+
+Sarah: oh yeah, so two customers hit the rate limit during their load testing. Current limit is 100 req/s which is fine for most cases but these guys are doing bulk imports. I was thinking we could add a burst mode or maybe tiered rate limits based on plan
+
+James: tiered makes more sense architecturally. We could use token buckets per API key
+
+Mike: ok let's do tiered rate limits then. Sarah can you draft a proposal for the tiers?
+
+Sarah: sure, I'll have something by Monday
+
+Mike: cool. One more thing - the onboarding flow. Marketing wants to add an interactive tutorial. Thoughts?
+
+James: honestly I think our docs are fine. An interactive tutorial sounds like a lot of work for marginal benefit
+
+Sarah: I actually disagree, I think the drop-off rate during onboarding is our biggest growth problem. But maybe we can do something simpler than a full tutorial? Like guided tooltips on first login?
+
+Mike: yeah I like the tooltips idea better. Less engineering effort, still improves onboarding. Let's explore that but it's lower priority than the other two
+
+Sarah: makes sense
+
+Mike: alright so to summarize - Q1 priorities are: 1) dashboard performance (James), 2) tiered rate limits (Sarah's proposal first), 3) onboarding tooltips (stretch goal). Sound right?
+
+James: yep
+
+Sarah: sounds good
+
+Mike: great. Oh one thing I forgot - we need to decide on the conference. Are we sponsoring ReactConf in March?
+
+Sarah: budget is tight but I think it's worth it for the visibility. Last year we got like 50 qualified leads from it
+
+Mike: ok let's do it. I'll talk to finance about the budget. Let's keep it to a booth, no speaking slot this year
+
+Mike: anything else? No? Ok thanks everyone, talk next week

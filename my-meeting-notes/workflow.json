@@ -1,0 +1,157 @@
+{
+  "name": "My Meeting Notes",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meeting-notes",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "Receive Transcript",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "meeting-notes-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nlet text = '';\nlet fileName = 'meeting';\n\n// Get text from body - supports raw text, JSON { transcript, title }, or form data\nif (input.json.body && typeof input.json.body === 'object') {\n  text = input.json.body.transcript || input.json.body.text || '';\n  fileName = input.json.body.title || input.json.body.fileName || 'meeting';\n} else if (typeof input.json.body === 'string') {\n  text = input.json.body;\n} else if (input.json.transcript) {\n  text = input.json.transcript;\n  fileName = input.json.title || 'meeting';\n} else {\n  // Try raw body\n  text = input.json.rawBody || input.json.data || '';\n}\n\nif (!text || text.trim().length < 20) {\n  throw new Error('No transcript provided. POST JSON with { \"transcript\": \"...\", \"title\": \"...\" }');\n}\n\n// Detect format from content\nlet ext = 'txt';\nif (text.startsWith('WEBVTT')) ext = 'vtt';\nelse if (/^\\d+\\r?\\n\\d{2}:\\d{2}:\\d{2},\\d{3}/.test(text)) ext = 'srt';\nelse if (/^\\d+:\\d{2}:\\d{2}\\.\\d{3},/.test(text)) ext = 'sbv';\n\n// Strip timestamps from subtitle formats\nif (ext === 'vtt') {\n  text = text.replace(/^WEBVTT[\\s\\S]*?\\n\\n/, '');\n  text = text.replace(/^\\d+\\s*\\n/gm, '');\n  text = text.replace(/\\d{2}:\\d{2}[:\\.]\\d{2,3}\\s*-->\\s*\\d{2}:\\d{2}[:\\.]\\d{2,3}[^\\n]*\\n/g, '');\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n} else if (ext === 'srt') {\n  text = text.replace(/^\\d+\\s*\\n/gm, '');\n  text = text.replace(/\\d{2}:\\d{2}:\\d{2},\\d{3}\\s*-->\\s*\\d{2}:\\d{2}:\\d{2},\\d{3}[^\\n]*\\n/g, '');\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n} else if (ext === 'sbv') {\n  text = text.replace(/^\\d+:\\d{2}:\\d{2}\\.\\d{3},\\d+:\\d{2}:\\d{2}\\.\\d{3}\\s*\\n/gm, '');\n  text = text.replace(/\\n{3,}/g, '\\n\\n');\n}\n\ntext = text.trim();\n\nlet meetingTitle = fileName.replace(/\\.[^.]+$/, '').replace(/^\\d{4}-\\d{2}-\\d{2}[-_]?/, '').replace(/[-_]/g, ' ').trim();\nif (!meetingTitle) meetingTitle = 'Meeting';\n\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nconst prompt = `You are an expert meeting analyst. Analyze this transcript and create structured meeting notes.\n\nMEETING: ${meetingTitle}\nDATE: ${dateLabel}\n\nTRANSCRIPT:\n${text.substring(0, 100000)}\n\nCreate structured notes in this exact format:\n\n# Meeting Notes - ${meetingTitle}\n**Date:** ${dateLabel}\n\n## Summary\n3-5 sentence executive summary of the meeting. What was discussed and why it matters.\n\n## Key Decisions\n- Decision 1\n- Decision 2\n(If no decisions were made, write \"No formal decisions recorded.\")\n\n## Action Items\n- [ ] Action item description — **Owner** (Deadline if mentioned)\n- [ ] Next action item — **Owner** (Deadline if mentioned)\n(If no action items, write \"No action items identified.\")\n\n## Discussion Points\nOrganized by topic. For each topic:\n### Topic Name\nBrief summary of what was discussed, key arguments, and conclusions.\n\n## Open Questions\n- Unresolved questions or items needing follow-up\n(If none, write \"No open questions.\")\n\n## Attendees\nList attendees if identifiable from the transcript. If not clear, write \"Not identifiable from transcript.\"\n\nOutput only the markdown.`;\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 4096,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, meetingTitle, dateLabel, fileName } }];"
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000002",
+      "name": "Parse & Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000003",
+      "name": "Claude Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst markdown = response.content[0].text;\n\nconst lines = markdown.split('\\n');\nlet bodyHtml = '';\nlet inList = false;\nlet inCheckList = false;\nlet sectionCount = 0;\n\nfunction inlineStyles(text) {\n  let s = text;\n  s = s.replace(/\\*\\*(.+?)\\*\\*/g, '<strong style=\"color:#e2e8f0;\">$1</strong>');\n  s = s.replace(/\\*(.+?)\\*/g, '<em>$1</em>');\n  s = s.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href=\"$2\" style=\"color:#60a5fa; text-decoration:underline;\">$1</a>');\n  return s;\n}\n\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n    continue;\n  }\n  if (trimmed.startsWith('### ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n    bodyHtml += `<h3 style=\"color:#e2e8f0; font-size:16px; margin:18px 0 6px 0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(4)}</h3>`;\n  } else if (trimmed.startsWith('## ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n    sectionCount++;\n    const border = sectionCount > 1 ? '<tr><td style=\"padding:12px 0 0 0; border-top:1px solid #1e3a5f;\"></td></tr>' : '';\n    bodyHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">${border}<tr><td style=\"padding:${sectionCount > 1 ? '16' : '0'}px 0 10px 0;\"><h2 style=\"color:#93c5fd; font-size:20px; margin:0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(3)}</h2></td></tr></table>`;\n  } else if (trimmed.startsWith('# ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n  } else if (trimmed.startsWith('- [ ] ') || trimmed.startsWith('- [x] ')) {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (!inCheckList) { bodyHtml += '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">'; inCheckList = true; }\n    const checked = trimmed.startsWith('- [x] ');\n    const content = inlineStyles(trimmed.slice(6));\n    const checkbox = checked ? '&#9745;' : '&#9744;';\n    bodyHtml += `<tr><td style=\"padding:6px 0;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"4\" style=\"background-color:#2563eb;\"></td><td style=\"padding:10px 14px; background-color:#0f1f38; font-family:Arial,sans-serif; font-size:14px; color:#cbd5e1; line-height:1.5;\"><span style=\"font-size:16px;\">${checkbox}</span> ${content}</td></tr></table></td></tr>`;\n  } else if (trimmed.startsWith('- ')) {\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n    if (!inList) { bodyHtml += '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">'; inList = true; }\n    const content = inlineStyles(trimmed.slice(2));\n    bodyHtml += `<tr><td style=\"padding:6px 0;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"4\" style=\"background-color:#2563eb;\"></td><td style=\"padding:10px 14px; background-color:#0f1f38; font-family:Arial,sans-serif; font-size:14px; color:#cbd5e1; line-height:1.5;\">${content}</td></tr></table></td></tr>`;\n  } else {\n    if (inList) { bodyHtml += '</table>'; inList = false; }\n    if (inCheckList) { bodyHtml += '</table>'; inCheckList = false; }\n    bodyHtml += `<p style=\"color:#cbd5e1; line-height:1.6; margin:8px 0; font-family:Arial,sans-serif; font-size:14px;\">${inlineStyles(trimmed)}</p>`;\n  }\n}\nif (inList) bodyHtml += '</table>';\nif (inCheckList) bodyHtml += '</table>';\n\nconst dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst meetingTitle = $('Parse & Build Prompt').first().json.meetingTitle;\nconst fileDateLabel = $('Parse & Build Prompt').first().json.dateLabel;\n\nconst html = `<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Meeting Notes</title></head><body style=\"margin:0; padding:0; background-color:#0a0f1a; -webkit-text-size-adjust:100%;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0a0f1a;\"><tr><td align=\"center\" style=\"padding:0;\">\n<table width=\"660\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:660px; width:100%;\">\n  <tr><td style=\"background-color:#0f1b2d; padding:36px 32px 28px 32px; border-bottom:3px solid #2563eb;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>\n      <td style=\"font-family:Arial,sans-serif;\">\n        <div style=\"font-size:12px; color:#60a5fa; text-transform:uppercase; letter-spacing:3px; font-weight:bold; margin-bottom:10px;\">Meeting Notes</div>\n        <h1 style=\"color:#f1f5f9; font-size:24px; margin:0 0 6px 0; font-weight:bold; font-family:Arial,sans-serif;\">${meetingTitle}</h1>\n        <div style=\"color:#94a3b8; font-size:13px; font-family:Arial,sans-serif;\">${dateLabel}</div>\n      </td>\n    </tr></table>\n  </td></tr>\n  <tr><td style=\"background-color:#111827; padding:28px 32px;\">\n    ${bodyHtml}\n  </td></tr>\n  <tr><td style=\"background-color:#0a0f1a; padding:20px 32px; border-top:1px solid #1e3a5f; text-align:center; font-family:Arial,sans-serif;\">\n    <div style=\"color:#64748b; font-size:12px;\">Powered by n8n</div>\n  </td></tr>\n</table>\n</td></tr></table>\n</body></html>`;\n\nconst outFileName = `${fileDateLabel}-${meetingTitle.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.md`;\n\nconst buffer = Buffer.from(markdown, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, outFileName, 'text/markdown');\n\nreturn [{ json: { markdown, html, meetingTitle, outFileName }, binary: { data: binaryData } }];"
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000004",
+      "name": "Prepare Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {
+        "fileName": "=/home/node/output/meetings/notes/{{ $json.outFileName }}",
+        "dataPropertyName": "data"
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000005",
+      "name": "Save Meeting Notes",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [960, -80]
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-email@gmail.com",
+        "sendTo": "your-email@gmail.com",
+        "subject": "=Meeting Notes - {{ $('Parse & Build Prompt').first().json.meetingTitle }}",
+        "emailType": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4000-8000-000000000006",
+      "name": "Email Notes",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [960, 80],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "Receive Transcript": {
+      "main": [
+        [
+          {
+            "node": "Parse & Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summarize": {
+      "main": [
+        [
+          {
+            "node": "Prepare Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Output": {
+      "main": [
+        [
+          {
+            "node": "Save Meeting Notes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "pinData": {}
+}
