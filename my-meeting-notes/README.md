@@ -1,23 +1,22 @@
 # My Meeting Notes - n8n Workflow
 
-Drop a meeting transcript into a folder — get structured notes with summary, decisions, action items, and discussion points. Emailed to you automatically.
+POST a meeting transcript via webhook — get structured notes with summary, decisions, action items, and discussion points. Saved as markdown and emailed to you.
 
 ## Workflow Overview
 
-**Trigger:** Watch folder (polls every minute) + Webhook on-demand
+**Trigger:** Webhook (POST)
+**Endpoint:** `/webhook/meeting-notes`
 **Timezone:** Europe/Madrid
 **Output:** Markdown file + styled HTML email
 
 ### Nodes
 
-1. **Watch Inbox** - Local File Trigger watching `/home/node/output/meetings/inbox/`
-2. **Webhook On-Demand** - GET webhook at `/webhook/ai-meeting-notes`
-3. **Read Transcript** - Reads the dropped file as binary
-4. **Parse & Build Prompt** - Code node that detects format (.txt, .md, .vtt, .srt, .sbv), strips timestamps from subtitle formats, and builds the Claude prompt
-5. **Claude Summarize** - HTTP Request to Anthropic API (claude-haiku-4-5-20251001)
-6. **Prepare Output** - Code node converting markdown to email-safe HTML with styled template
-7. **Save Meeting Notes** - Writes markdown to `/home/node/output/meetings/notes/`
-8. **Email Notes** - Sends styled meeting notes to your email
+1. **Receive Transcript** - Webhook (POST `/webhook/meeting-notes`)
+2. **Parse & Build Prompt** - Code node that detects format, strips timestamps from subtitle formats, and builds the prompt
+3. **Claude Summarize** - HTTP Request to Anthropic API (claude-haiku-4-5-20251001)
+4. **Prepare Output** - Code node converting markdown to email-safe HTML with styled template
+5. **Save Meeting Notes** - Writes markdown to `/home/node/output/meetings/notes/`
+6. **Email Notes** - Sends styled meeting notes to your email
 
 ### Supported Formats
 
@@ -44,7 +43,7 @@ Timestamps and sequence numbers are automatically stripped from subtitle formats
 
 ### Import
 
-Import `workflow.json` into n8n.
+Import `workflow.json` into n8n via **Workflows → Import from file**.
 
 ### Credentials
 
@@ -59,18 +58,29 @@ Also update the `fromEmail` and `sendTo` fields in the Email Notes node.
 
 ### Directories
 
-Ensure the directories exist on the n8n host:
+Ensure the output directory exists on the n8n host:
 
 ```bash
-mkdir -p /home/node/output/meetings/inbox
 mkdir -p /home/node/output/meetings/notes
 ```
 
 ## Usage
 
-Drop a transcript file (`.txt`, `.md`, `.vtt`, `.srt`, `.sbv`) into `/home/node/output/meetings/inbox/`. The workflow picks it up within a minute, summarizes it, saves notes to `/home/node/output/meetings/notes/`, and emails you.
+POST a JSON payload to the webhook:
 
-**Tip:** Name the file descriptively (e.g., `2026-01-15-product-roadmap.txt`) — the filename becomes the meeting title.
+```bash
+curl -X POST http://your-n8n-host:5678/webhook/meeting-notes \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": "your transcript text here...", "title": "Meeting Name"}'
+```
+
+Or pipe a file:
+
+```bash
+curl -X POST http://your-n8n-host:5678/webhook/meeting-notes \
+  -H "Content-Type: application/json" \
+  -d "{\"transcript\": \"$(cat transcript.txt | sed 's/\"/\\\"/g' | tr '\n' ' ')\", \"title\": \"My Meeting\"}"
+```
 
 ## Cost
 
