@@ -1,0 +1,205 @@
+{
+  "name": "AI Weather Forecast",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "40 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "wf-0001-0001-4000-8000-000000000001",
+      "name": "Morning 7:40AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, -60]
+    },
+    {
+      "parameters": {
+        "path": "ai-weather-forecast",
+        "httpMethod": "GET",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "wf-0001-0001-4000-8000-000000000002",
+      "name": "Webhook On-Demand",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 60],
+      "webhookId": "ai-weather-forecast"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === CONFIGURATION - Edit cities here ===\nconst cities = [\n  { name: 'Málaga', lat: 36.72, lon: -4.42, timezone: 'Europe/Madrid' },\n  { name: 'Madrid', lat: 40.42, lon: -3.70, timezone: 'Europe/Madrid' },\n  { name: 'Faro (Algarve)', lat: 37.02, lon: -7.93, timezone: 'Europe/Lisbon' },\n  { name: 'Nice', lat: 43.71, lon: 7.27, timezone: 'Europe/Paris' }\n];\n// More cities — uncomment or add as needed:\n// { name: 'London', lat: 51.51, lon: -0.13, timezone: 'Europe/London' },\n// { name: 'Paris', lat: 48.86, lon: 2.35, timezone: 'Europe/Paris' },\n// { name: 'Stockholm', lat: 59.33, lon: 18.07, timezone: 'Europe/Stockholm' },\n// { name: 'Helsinki', lat: 60.17, lon: 24.94, timezone: 'Europe/Helsinki' },\n// { name: 'New York', lat: 40.71, lon: -74.01, timezone: 'America/New_York' },\n// { name: 'Barcelona', lat: 41.39, lon: 2.17, timezone: 'Europe/Madrid' },\n// { name: 'Lisbon', lat: 38.72, lon: -9.14, timezone: 'Europe/Lisbon' },\n// { name: 'Rome', lat: 41.90, lon: 12.50, timezone: 'Europe/Rome' },\n// === END CONFIGURATION ===\n\nconst allData = [];\nconst errors = [];\n\nfor (const city of cities) {\n  try {\n    const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,uv_index_max,weather_code&hourly=temperature_2m,precipitation_probability,weather_code&timezone=${city.timezone}&forecast_days=7`;\n\n    const response = await this.helpers.httpRequest({\n      method: 'GET',\n      url,\n      returnFullResponse: false,\n      timeout: 15000\n    });\n\n    allData.push({\n      city: city.name,\n      lat: city.lat,\n      lon: city.lon,\n      timezone: city.timezone,\n      daily: response.daily,\n      hourly: response.hourly,\n      daily_units: response.daily_units,\n      hourly_units: response.hourly_units\n    });\n  } catch (e) {\n    errors.push({ city: city.name, error: e.message || String(e) });\n  }\n}\n\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nreturn [{ json: {\n  dateLabel,\n  totalCities: allData.length,\n  cities: allData,\n  errors,\n  generatedAt: new Date().toISOString()\n} }];"
+      },
+      "id": "wf-0001-0001-4000-8000-000000000003",
+      "name": "Fetch Weather",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\n\nconst weatherCodes = {\n  0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',\n  45: 'Foggy', 48: 'Rime fog', 51: 'Light drizzle', 53: 'Moderate drizzle',\n  55: 'Dense drizzle', 61: 'Slight rain', 63: 'Moderate rain', 65: 'Heavy rain',\n  71: 'Slight snow', 73: 'Moderate snow', 75: 'Heavy snow',\n  80: 'Slight showers', 81: 'Moderate showers', 82: 'Heavy showers',\n  95: 'Thunderstorm', 96: 'Thunderstorm + hail', 99: 'Thunderstorm + heavy hail'\n};\n\nconst weatherSummary = data.cities.map(city => {\n  const d = city.daily;\n  let s = `### ${city.city}\\n`;\n  for (let i = 0; i < d.time.length; i++) {\n    const wc = weatherCodes[d.weather_code[i]] || 'Unknown';\n    s += `${d.time[i]}: ${wc}, ${d.temperature_2m_min[i]}–${d.temperature_2m_max[i]}°C (feels ${d.apparent_temperature_min[i]}–${d.apparent_temperature_max[i]}°C), Rain: ${d.precipitation_probability_max[i]}% (${d.precipitation_sum[i]}mm), Wind: ${d.wind_speed_10m_max[i]} km/h, UV: ${d.uv_index_max[i]}\\n`;\n  }\n  return s;\n}).join('\\n');\n\nconst prompt = `You are a weather analyst writing a morning briefing for someone living in the Mediterranean. Analyze this 7-day forecast data for ${data.totalCities} cities.\n\nWEATHER DATA:\n${weatherSummary}\n\n${data.errors.length > 0 ? 'API errors: ' + JSON.stringify(data.errors) : ''}\n\nRULES:\n- Write a concise, practical morning briefing\n- Use Celsius throughout\n- Highlight anything notable: heat waves, storms, high UV, big temperature swings, best/worst days\n- Compare cities where useful (e.g. \"Madrid significantly hotter than the coast\")\n- Include outdoor/travel recommendations\n\nFORMAT:\n\n## Overview\n2-3 sentences on the overall Mediterranean weather pattern this week.\n\n## Today at a Glance\nOne bullet per city — what to expect today, practically.\n\n## Week Ahead\nKey trends and notable days across all cities. What days are best for outdoor plans? Any weather to watch out for?\n\n## Travel & Outdoor Tips\n2-3 practical recommendations.\n\nOutput only the markdown.`;\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 2048,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body } }];"
+      },
+      "id": "wf-0001-0001-4000-8000-000000000004",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "wf-0001-0001-4000-8000-000000000005",
+      "name": "Claude Summarize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nconst markdown = response.content[0].text;\nconst weatherData = $('Fetch Weather').first().json.cities;\n\nconst weatherCodes = {\n  0: ['\\u2600\\ufe0f', 'Clear sky'], 1: ['\\ud83c\\udf24', 'Mainly clear'],\n  2: ['\\u26c5', 'Partly cloudy'], 3: ['\\u2601\\ufe0f', 'Overcast'],\n  45: ['\\ud83c\\udf2b', 'Foggy'], 48: ['\\ud83c\\udf2b', 'Rime fog'],\n  51: ['\\ud83c\\udf26', 'Light drizzle'], 53: ['\\ud83c\\udf26', 'Drizzle'],\n  55: ['\\ud83c\\udf27', 'Dense drizzle'], 61: ['\\ud83c\\udf27', 'Slight rain'],\n  63: ['\\ud83c\\udf27', 'Moderate rain'], 65: ['\\ud83c\\udf27', 'Heavy rain'],\n  71: ['\\ud83c\\udf28', 'Slight snow'], 73: ['\\ud83c\\udf28', 'Moderate snow'],\n  75: ['\\u2744\\ufe0f', 'Heavy snow'], 80: ['\\ud83c\\udf26', 'Slight showers'],\n  81: ['\\ud83c\\udf27', 'Moderate showers'], 82: ['\\ud83c\\udf27', 'Heavy showers'],\n  95: ['\\u26c8', 'Thunderstorm'], 96: ['\\u26c8', 'Thunder + hail'],\n  99: ['\\u26c8', 'Thunder + heavy hail']\n};\n\nfunction cToF(c) { return Math.round(c * 9/5 + 32); }\n\nfunction tempColor(c) {\n  if (c <= 0) return '#60a5fa';\n  if (c <= 10) return '#38bdf8';\n  if (c <= 18) return '#34d399';\n  if (c <= 25) return '#fbbf24';\n  if (c <= 32) return '#f97316';\n  return '#ef4444';\n}\n\n// Find global temp range for consistent bar scaling\nlet globalMin = 100, globalMax = -100;\nfor (const city of weatherData) {\n  for (let i = 0; i < city.daily.time.length; i++) {\n    globalMin = Math.min(globalMin, city.daily.temperature_2m_min[i]);\n    globalMax = Math.max(globalMax, city.daily.temperature_2m_max[i]);\n  }\n}\nglobalMin = Math.floor(globalMin - 3);\nglobalMax = Math.ceil(globalMax + 3);\n\n// Parse Claude's markdown into HTML\nfunction inlineStyles(text) {\n  let s = text;\n  s = s.replace(/\\*\\*(.+?)\\*\\*/g, '<strong style=\"color:#e2e8f0;\">$1</strong>');\n  s = s.replace(/\\*(.+?)\\*/g, '<em>$1</em>');\n  return s;\n}\n\nlet summaryHtml = '';\nconst lines = markdown.split('\\n');\nlet inList = false;\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed) {\n    if (inList) { summaryHtml += '</table>'; inList = false; }\n    continue;\n  }\n  if (trimmed.startsWith('# ')) continue;\n  if (trimmed.startsWith('## ')) {\n    if (inList) { summaryHtml += '</table>'; inList = false; }\n    summaryHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"padding:16px 0 8px 0; border-top:1px solid #1e3a5f;\"><h2 style=\"color:#93c5fd; font-size:18px; margin:0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(3)}</h2></td></tr></table>`;\n  } else if (trimmed.startsWith('### ')) {\n    if (inList) { summaryHtml += '</table>'; inList = false; }\n    summaryHtml += `<h3 style=\"color:#bfdbfe; font-size:15px; margin:12px 0 4px 0; font-weight:bold; font-family:Arial,sans-serif;\">${trimmed.slice(4)}</h3>`;\n  } else if (trimmed.startsWith('- ')) {\n    if (!inList) { summaryHtml += '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">'; inList = true; }\n    const content = inlineStyles(trimmed.slice(2));\n    summaryHtml += `<tr><td style=\"padding:5px 0;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"4\" style=\"background-color:#3b82f6;\"></td><td style=\"padding:8px 12px; background-color:#0f1d32; font-family:Arial,sans-serif; font-size:14px; color:#cbd5e1; line-height:1.5;\">${content}</td></tr></table></td></tr>`;\n  } else {\n    if (inList) { summaryHtml += '</table>'; inList = false; }\n    summaryHtml += `<p style=\"color:#cbd5e1; line-height:1.6; margin:6px 0; font-family:Arial,sans-serif; font-size:14px;\">${inlineStyles(trimmed)}</p>`;\n  }\n}\nif (inList) summaryHtml += '</table>';\n\n// Build city weather sections with charts and tables\nconst dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];\nlet citiesHtml = '';\n\nfor (const city of weatherData) {\n  const daily = city.daily;\n  const todayCode = daily.weather_code[0];\n  const todayW = weatherCodes[todayCode] || ['\\ud83c\\udf21', 'Unknown'];\n  const todayMax = daily.temperature_2m_max[0];\n  const todayMin = daily.temperature_2m_min[0];\n\n  // City header\n  citiesHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-top:20px;\"><tr><td style=\"padding:12px 16px; background-color:#1e3a5f; border-left:4px solid #3b82f6;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"font-family:Arial,sans-serif;\"><div style=\"font-size:20px; color:#e2e8f0; font-weight:bold;\">${city.city}</div><div style=\"font-size:14px; color:#93c5fd; margin-top:4px;\">Today: ${todayW[0]} ${todayW[1]} | ${todayMax}\\u00b0C (${cToF(todayMax)}\\u00b0F) / ${todayMin}\\u00b0C (${cToF(todayMin)}\\u00b0F)</div></td><td width=\"60\" style=\"text-align:right; font-size:36px;\">${todayW[0]}</td></tr></table></td></tr></table>`;\n\n  // Temperature bar chart\n  citiesHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-top:4px;\"><tr><td style=\"padding:10px 16px; background-color:#0f1d32;\"><div style=\"font-size:11px; color:#64748b; font-family:Arial,sans-serif; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;\">7-Day Temperature Range</div><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">`;\n\n  for (let i = 0; i < daily.time.length; i++) {\n    const date = new Date(daily.time[i] + 'T00:00:00');\n    const dayName = dayNames[date.getDay()];\n    const dateStr = `${date.getDate()}/${date.getMonth()+1}`;\n    const min = daily.temperature_2m_min[i];\n    const max = daily.temperature_2m_max[i];\n    const range = globalMax - globalMin;\n    const leftPct = Math.round(((min - globalMin) / range) * 100);\n    const widthPct = Math.max(4, Math.round(((max - min) / range) * 100));\n    const isToday = i === 0;\n    const rowBg = isToday ? 'background-color:#1a2744;' : '';\n    const labelColor = isToday ? '#93c5fd' : '#94a3b8';\n    const labelWeight = isToday ? 'font-weight:bold;' : '';\n\n    citiesHtml += `<tr><td width=\"65\" style=\"padding:4px 8px 4px 0; font-family:Arial,sans-serif; font-size:12px; color:${labelColor}; ${labelWeight} ${rowBg} white-space:nowrap;\">${dayName} ${dateStr}</td><td width=\"35\" style=\"padding:4px 4px; font-family:Arial,sans-serif; font-size:11px; color:#94a3b8; text-align:right; ${rowBg}\">${min}\\u00b0</td><td style=\"padding:4px 0; ${rowBg}\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"${leftPct}%\" style=\"height:14px;\"></td><td width=\"${widthPct}%\" style=\"height:14px; background:linear-gradient(90deg, ${tempColor(min)}, ${tempColor(max)});\"></td><td style=\"height:14px;\"></td></tr></table></td><td width=\"35\" style=\"padding:4px 0 4px 4px; font-family:Arial,sans-serif; font-size:11px; color:#e2e8f0; text-align:left; ${rowBg}\">${max}\\u00b0</td></tr>`;\n  }\n\n  citiesHtml += `</table></td></tr></table>`;\n\n  // Precipitation probability bars\n  citiesHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-top:2px;\"><tr><td style=\"padding:10px 16px; background-color:#0f1d32;\"><div style=\"font-size:11px; color:#64748b; font-family:Arial,sans-serif; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;\">Precipitation Probability</div><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">`;\n\n  for (let i = 0; i < daily.time.length; i++) {\n    const date = new Date(daily.time[i] + 'T00:00:00');\n    const dayName = dayNames[date.getDay()];\n    const rainPct = daily.precipitation_probability_max[i];\n    const rainColor = rainPct > 70 ? '#3b82f6' : rainPct > 40 ? '#60a5fa' : rainPct > 10 ? '#93c5fd' : '#1e3a5f';\n\n    citiesHtml += `<tr><td width=\"40\" style=\"padding:3px 8px 3px 0; font-family:Arial,sans-serif; font-size:11px; color:#94a3b8;\">${dayName}</td><td style=\"padding:3px 0;\"><table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td width=\"${Math.max(1, rainPct)}%\" style=\"height:10px; background-color:${rainColor};\"></td><td style=\"height:10px;\"></td></tr></table></td><td width=\"36\" style=\"padding:3px 0 3px 8px; font-family:Arial,sans-serif; font-size:11px; color:#94a3b8; text-align:right;\">${rainPct}%</td></tr>`;\n  }\n\n  citiesHtml += `</table></td></tr></table>`;\n\n  // Detail data table\n  citiesHtml += `<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-top:2px;\"><tr><td style=\"padding:10px 16px 16px 16px; background-color:#0f1d32;\"><div style=\"font-size:11px; color:#64748b; font-family:Arial,sans-serif; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;\">Detailed Forecast</div><table width=\"100%\" cellpadding=\"4\" cellspacing=\"0\" border=\"0\" style=\"font-family:Arial,sans-serif; font-size:11px;\"><tr style=\"color:#64748b; text-transform:uppercase; letter-spacing:1px; font-size:10px;\"><td style=\"padding:4px; border-bottom:1px solid #1e3a5f;\">Day</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\"></td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Max</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Min</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Feels</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Rain</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Precip</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">Wind</td><td style=\"padding:4px; border-bottom:1px solid #1e3a5f; text-align:center;\">UV</td></tr>`;\n\n  for (let i = 0; i < daily.time.length; i++) {\n    const date = new Date(daily.time[i] + 'T00:00:00');\n    const dayName = dayNames[date.getDay()];\n    const wc = daily.weather_code[i];\n    const weather = weatherCodes[wc] || ['\\ud83c\\udf21', '?'];\n    const max = daily.temperature_2m_max[i];\n    const min = daily.temperature_2m_min[i];\n    const feelsMax = daily.apparent_temperature_max[i];\n    const isToday = i === 0;\n    const rowColor = isToday ? '#e2e8f0' : '#94a3b8';\n    const rowWeight = isToday ? 'font-weight:bold;' : '';\n    const uvVal = daily.uv_index_max[i];\n    const uvColor = uvVal >= 8 ? '#ef4444' : uvVal >= 5 ? '#f97316' : '#94a3b8';\n\n    const uvLabel = uvVal >= 11 ? 'Extreme' : uvVal >= 8 ? 'Very High' : uvVal >= 6 ? 'High' : uvVal >= 3 ? 'Moderate' : 'Low';\n\n    citiesHtml += `<tr><td style=\"padding:4px; color:${rowColor}; ${rowWeight} white-space:nowrap;\">${dayName} ${date.getDate()}/${date.getMonth()+1}</td><td style=\"padding:4px; text-align:center;\" title=\"${weather[1]}\">${weather[0]}</td><td style=\"padding:4px; color:${tempColor(max)}; text-align:center; ${rowWeight}\">${max}\\u00b0 (${cToF(max)}\\u00b0F)</td><td style=\"padding:4px; color:${tempColor(min)}; text-align:center;\">${min}\\u00b0 (${cToF(min)}\\u00b0F)</td><td style=\"padding:4px; color:#94a3b8; text-align:center;\">${feelsMax}\\u00b0</td><td style=\"padding:4px; color:#60a5fa; text-align:center;\">${daily.precipitation_probability_max[i]}%</td><td style=\"padding:4px; color:#94a3b8; text-align:center;\">${daily.precipitation_sum[i]}mm</td><td style=\"padding:4px; color:#94a3b8; text-align:center;\">${daily.wind_speed_10m_max[i]} km/h</td><td style=\"padding:4px; color:${uvColor}; text-align:center;\">${uvVal} ${uvLabel}</td></tr>`;\n  }\n\n  citiesHtml += `</table></td></tr></table>`;\n}\n\n// Full email HTML\nconst dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });\nconst cityNames = weatherData.map(c => c.city).join(' \\u00b7 ');\n\nconst html = `<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>Weather Forecast</title></head><body style=\"margin:0; padding:0; background-color:#0a0f1a; -webkit-text-size-adjust:100%;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0a0f1a;\"><tr><td align=\"center\" style=\"padding:0;\">\n<table width=\"660\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:660px; width:100%;\">\n  <!-- Header -->\n  <tr><td style=\"background-color:#1e3a5f; padding:36px 32px 28px 32px; border-bottom:3px solid #3b82f6;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>\n      <td style=\"font-family:Arial,sans-serif;\">\n        <div style=\"font-size:12px; color:#93c5fd; text-transform:uppercase; letter-spacing:3px; font-weight:bold; margin-bottom:10px;\">\\u2600\\ufe0f Daily Forecast</div>\n        <h1 style=\"color:#f1f5f9; font-size:26px; margin:0 0 6px 0; font-weight:bold; font-family:Arial,sans-serif;\">Weather Forecast</h1>\n        <div style=\"color:#94a3b8; font-size:13px; font-family:Arial,sans-serif;\">${dateLabel}</div>\n        <div style=\"color:#64748b; font-size:12px; font-family:Arial,sans-serif; margin-top:4px;\">${cityNames}</div>\n      </td>\n      <td width=\"80\" valign=\"top\" style=\"text-align:right; font-size:48px;\">\\ud83c\\udf24</td>\n    </tr></table>\n  </td></tr>\n  <!-- Claude Summary -->\n  <tr><td style=\"background-color:#111827; padding:24px 32px;\">\n    ${summaryHtml}\n  </td></tr>\n  <!-- Reference Legend -->\n  <tr><td style=\"background-color:#111827; padding:0 32px 16px 32px;\">\n    <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"padding:12px 16px; background-color:#0f1d32; border-left:4px solid #64748b;\">\n      <div style=\"font-size:11px; color:#64748b; font-family:Arial,sans-serif; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;\">Reading Guide</div>\n      <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">\n        <tr><td style=\"padding:4px 0; font-family:Arial,sans-serif; font-size:12px; color:#94a3b8;\"><strong style=\"color:#bfdbfe;\">UV Index:</strong> <span style=\"color:#94a3b8;\">0-2 Low</span> \\u00b7 <span style=\"color:#fbbf24;\">3-5 Moderate</span> \\u00b7 <span style=\"color:#f97316;\">6-7 High</span> \\u00b7 <span style=\"color:#ef4444;\">8-10 Very High</span> \\u00b7 <span style=\"color:#dc2626;\">11+ Extreme</span></td></tr>\n        <tr><td style=\"padding:4px 0; font-family:Arial,sans-serif; font-size:12px; color:#94a3b8;\"><strong style=\"color:#bfdbfe;\">Wind:</strong> <span style=\"color:#94a3b8;\">0-19 Calm/Light</span> \\u00b7 <span style=\"color:#fbbf24;\">20-39 Moderate</span> \\u00b7 <span style=\"color:#f97316;\">40-61 Strong</span> \\u00b7 <span style=\"color:#ef4444;\">62+ Storm</span> <span style=\"color:#64748b;\">(km/h)</span></td></tr>\n        <tr><td style=\"padding:4px 0; font-family:Arial,sans-serif; font-size:12px; color:#94a3b8;\"><strong style=\"color:#bfdbfe;\">Weather:</strong> \\u2600\\ufe0f Clear \\u00b7 \\ud83c\\udf24 Mostly Clear \\u00b7 \\u26c5 Partly Cloudy \\u00b7 \\u2601\\ufe0f Overcast \\u00b7 \\ud83c\\udf27 Rain \\u00b7 \\u26c8 Thunderstorm</td></tr>\n      </table>\n    </td></tr></table>\n  </td></tr>\n  <!-- City Weather Sections -->\n  <tr><td style=\"background-color:#111827; padding:0 32px 24px 32px;\">\n    ${citiesHtml}\n  </td></tr>\n  <!-- Footer -->\n  <tr><td style=\"background-color:#0a0f1a; padding:20px 32px; border-top:1px solid #1e3a5f; text-align:center; font-family:Arial,sans-serif;\">\n    <div style=\"color:#3b82f6; font-size:12px; font-weight:bold; letter-spacing:1px;\">BOXINOM</div>\n    <div style=\"color:#475569; font-size:11px; margin-top:4px;\">Weather Intelligence \\u00b7 Published Daily</div>\n    <div style=\"color:#374151; font-size:10px; margin-top:4px;\">Data: Open-Meteo API \\u00b7 Analysis: Claude AI</div>\n  </td></tr>\n</table>\n</td></tr></table>\n</body></html>`;\n\n// Build markdown version\nconst dateForFile = $('Fetch Weather').first().json.dateLabel;\nlet md = `# Weather Forecast - ${dateForFile}\\n\\n`;\nmd += markdown + '\\n\\n---\\n\\n';\nfor (const city of weatherData) {\n  const d = city.daily;\n  md += `## ${city.city}\\n\\n`;\n  md += `| Day | Weather | Max\\u00b0C (\\u00b0F) | Min\\u00b0C (\\u00b0F) | Feels | Rain% | Precip | Wind | UV |\\n`;\n  md += `|-----|---------|----------|----------|-------|-------|--------|------|-----|\\n`;\n  for (let i = 0; i < d.time.length; i++) {\n    const date = new Date(d.time[i] + 'T00:00:00');\n    const dayName = dayNames[date.getDay()];\n    const wc = d.weather_code[i];\n    const weather = weatherCodes[wc] || ['?', '?'];\n    md += `| ${dayName} ${date.getDate()}/${date.getMonth()+1} | ${weather[0]} ${weather[1]} | ${d.temperature_2m_max[i]}\\u00b0 (${cToF(d.temperature_2m_max[i])}\\u00b0F) | ${d.temperature_2m_min[i]}\\u00b0 (${cToF(d.temperature_2m_min[i])}\\u00b0F) | ${d.apparent_temperature_max[i]}\\u00b0 | ${d.precipitation_probability_max[i]}% | ${d.precipitation_sum[i]}mm | ${d.wind_speed_10m_max[i]} km/h | ${d.uv_index_max[i]} |\\n`;\n  }\n  md += '\\n';\n}\n\nconst buffer = Buffer.from(md, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, `weather-${dateForFile}.md`, 'text/markdown');\n\nreturn [{ json: { markdown: md, html }, binary: { data: binaryData } }];"
+      },
+      "id": "wf-0001-0001-4000-8000-000000000006",
+      "name": "Prepare Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 0]
+    },
+    {
+      "parameters": {
+        "fileName": "=/home/node/output/weather/weather-{{ $now.format('yyyy-MM-dd') }}.md",
+        "dataPropertyName": "data"
+      },
+      "id": "wf-0001-0001-4000-8000-000000000007",
+      "name": "Save Weather Forecast",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1200, -80]
+    },
+    {
+      "parameters": {
+        "fromEmail": "your-email@gmail.com",
+        "sendTo": "your-email@gmail.com",
+        "subject": "=Weather Forecast - {{ $now.format('yyyy-MM-dd') }}",
+        "emailType": "html",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "wf-0001-0001-4000-8000-000000000008",
+      "name": "Email Forecast",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1200, 80],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "Morning 7:40AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook On-Demand": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weather": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Summarize": {
+      "main": [
+        [
+          {
+            "node": "Prepare Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Output": {
+      "main": [
+        [
+          {
+            "node": "Save Weather Forecast",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "pinData": {}
+}
