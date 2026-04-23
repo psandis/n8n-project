@@ -10,6 +10,7 @@ A collection of self-hosted n8n automation workflows for daily digests, news, we
 | [ai-news-digest](./ai-news-digest/) | AI/tech news digest from 9 RSS sources with styled HTML email | Schedule 7:30 AM, 12:30 PM + Webhook | ✅ Live |
 | [my-meeting-notes](./my-meeting-notes/) | POST transcript via webhook, get structured notes + email | Webhook | ✅ Live |
 | [ai-weather-forecast](./ai-weather-forecast/) | 7-day weather forecast for configurable cities with visual charts | Schedule 7:40 AM + Webhook | 🆕 New |
+| [my-media-helper](./my-media-helper/) | 5-agent LinkedIn post pipeline: draft, critic, finetune, prepare, final check | Webhook | 🆕 New |
 
 ## Architecture
 
@@ -22,7 +23,7 @@ Trigger → Fetch Data → Build Prompt → Claude API → Format Output → Sav
 - **AI Engine:** Anthropic Claude (claude-haiku-4-5-20251001) via direct HTTP Request
 - **Email:** Styled HTML templates (table-based, email-client safe) via SMTP
 - **Storage:** Markdown files saved to `/home/node/output/`
-- **APIs:** Open-Meteo (weather), GitHub API (activity), RSS feeds (news)
+- **APIs:** Open-Meteo (weather), GitHub API (activity), RSS feeds (news), Anthropic API (all projects)
 
 ## Tech Stack
 
@@ -59,6 +60,8 @@ mkdir -p /home/node/output/ai-news
 mkdir -p /home/node/output/weather
 mkdir -p /home/node/output/meetings
 mkdir -p /home/node/output/digests
+mkdir -p /home/node/output/my-media-helper/published
+mkdir -p /home/node/output/my-media-helper/drafts
 ```
 
 ## Project Structure
@@ -77,7 +80,10 @@ n8n-project/
 ├── ai-weather-forecast/    # Weather forecast with charts
 │   ├── README.md
 │   └── workflow.json
-├── LICENSE                 # GPL-3.0
+├── my-media-helper/        # LinkedIn post pipeline
+│   ├── README.md
+│   └── workflow.json
+├── LICENSE
 └── README.md
 ```
 

@@ -1,0 +1,294 @@
+{
+  "name": "My Media Helper",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "my-media-helper",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "dd000001-0001-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "my-media-helper-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first();\nconst body = input.json.body || {};\nconst topic = (typeof body === 'object' ? body.topic : '') || input.json.topic || '';\n\nif (!topic || topic.trim().length < 3) {\n  throw new Error('No topic provided. POST JSON with topic field.');\n}\n\nconst fs = require('fs');\nconst pathLib = require('path');\nconst publishedDir = '/home/node/output/my-media-helper/published';\nlet posts = [];\nlet historyText = '';\n\ntry {\n  const files = fs.readdirSync(publishedDir).filter(f => f.endsWith('.md')).sort();\n  for (const file of files) {\n    const content = fs.readFileSync(pathLib.join(publishedDir, file), 'utf-8').trim();\n    if (content) posts.push({ file, content });\n  }\n  if (posts.length > 0) {\n    historyText = posts.map((p, i) => '--- Post ' + (i + 1) + ' (' + p.file + ') ---\\n' + p.content).join('\\n\\n');\n  }\n} catch (e) {\n  historyText = '';\n}\n\nreturn [{ json: { topic: topic.trim(), posts, historyText } }];"
+      },
+      "id": "dd000001-0002-4000-8000-000000000002",
+      "name": "Load History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Load History').first().json;\nconst topic = data.topic;\nconst historyText = data.historyText;\n\nconst historySection = historyText\n  ? 'Published posts by this author. Match the voice, tone, and style exactly:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Write a LinkedIn post about this topic:\\n\\n'\n  + topic\n  + '\\n\\nVoice rules:\\n- Direct and confident, no hedging or filler\\n- Share specific details, tools, or numbers when relevant\\n- Professional but conversational, not corporate or stiff\\n- First person\\n- Appropriate length for the content (can be short 3-5 lines or medium 10-15 lines)\\n- Do not always end with a question or call to action\\n- No AI-sounding phrases or excessive enthusiasm\\n\\nOutput only the post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, topic, historyText } }];"
+      },
+      "id": "dd000001-0003-4000-8000-000000000003",
+      "name": "Draft Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "dd000001-0004-4000-8000-000000000004",
+      "name": "Draft Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const draft = $input.first().json.content[0].text;\nconst historyText = $('Load History').first().json.historyText;\n\nconst historySection = historyText\n  ? 'Author published posts for reference:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Critically review this LinkedIn post draft:\\n\\n'\n  + draft\n  + '\\n\\nGive specific numbered feedback (max 8 points) on:\\n- Does it match the author voice (direct, specific, not generic)?\\n- Any phrases that sound AI-generated or corporate?\\n- Is the content specific enough or too vague?\\n- Is the structure and length appropriate for the content?\\n- Any missed opportunities to add a real detail or perspective?\\n\\nBe direct and specific. Output only the numbered critique, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft } }];"
+      },
+      "id": "dd000001-0005-4000-8000-000000000005",
+      "name": "Critic Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "dd000001-0006-4000-8000-000000000006",
+      "name": "Critic Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const critique = $input.first().json.content[0].text;\nconst draft = $('Critic Build').first().json.draft;\n\nconst prompt = 'Rewrite this LinkedIn post based on the critic feedback. Address each point. Keep what already works well.\\n\\nORIGINAL DRAFT:\\n' + draft + '\\n\\nCRITIC FEEDBACK:\\n' + critique + '\\n\\nOutput only the revised post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft, critique } }];"
+      },
+      "id": "dd000001-0007-4000-8000-000000000007",
+      "name": "Finetune Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "dd000001-0008-4000-8000-000000000008",
+      "name": "Finetune Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const revised = $input.first().json.content[0].text;\nconst critique = $('Finetune Build').first().json.critique;\nconst draft = $('Finetune Build').first().json.draft;\nconst historyText = $('Load History').first().json.historyText;\n\nconst historySection = historyText\n  ? 'Author history posts (check whether hashtags appear in them):\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Format this post for LinkedIn publishing:\\n\\n'\n  + revised\n  + '\\n\\nFormatting rules:\\n- Add blank lines between paragraphs for readability\\n- Add hashtags at the end ONLY if the author uses hashtags in the history posts. If no hashtags appear in history, add none at all.\\n- Keep under 3000 characters\\n- Do not change the meaning, voice, or content\\n\\nOutput only the formatted post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, revised, critique, draft } }];"
+      },
+      "id": "dd000001-0009-4000-8000-000000000009",
+      "name": "Prepare Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1760, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "dd000001-0010-4000-8000-000000000010",
+      "name": "Prepare Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const formatted = $input.first().json.content[0].text;\nconst revised = $('Prepare Build').first().json.revised;\n\nconst prompt = 'Final quality check for this LinkedIn post:\\n\\n'\n  + formatted\n  + '\\n\\nCheck: reads naturally (not AI-written), specific and authentic, no typos or awkward phrasing, LinkedIn-appropriate length and format.\\n\\nOutput format (strict):\\nSTATUS: APPROVED\\nor\\nSTATUS: NEEDS REVISION: [one sentence why]\\n\\nThen on a new line:\\nFINAL POST:\\n[post text, with any corrections applied]';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, formatted, revised } }];"
+      },
+      "id": "dd000001-0011-4000-8000-000000000011",
+      "name": "Final Check Build",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "dd000001-0012-4000-8000-000000000012",
+      "name": "Final Check Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 0],
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const finalResponse = $input.first().json.content[0].text;\nconst topic = $('Load History').first().json.topic;\n\nconst statusMatch = finalResponse.match(/STATUS:\\s*(APPROVED|NEEDS REVISION[^\\n]*)/i);\nconst status = statusMatch ? statusMatch[1].trim() : 'UNKNOWN';\nconst isApproved = status.startsWith('APPROVED');\n\nconst finalPostMatch = finalResponse.match(/FINAL POST:\\s*([\\s\\S]+)/i);\nconst finalPost = finalPostMatch ? finalPostMatch[1].trim() : $('Final Check Build').first().json.formatted;\n\nconst draft = $('Critic Build').first().json.draft;\nconst critique = $('Finetune Build').first().json.critique;\nconst revised = $('Prepare Build').first().json.revised;\nconst formatted = $('Final Check Build').first().json.formatted;\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nconst markdown = '# LinkedIn Post Draft\\n**Topic:** ' + topic + '\\n**Date:** ' + dateLabel + '\\n**Status:** ' + status + '\\n\\n## Final Post\\n\\n' + finalPost + '\\n\\n---\\n\\n## Agent Trail\\n\\n### 1. Draft\\n' + draft + '\\n\\n### 2. Critic Feedback\\n' + critique + '\\n\\n### 3. Revised\\n' + revised + '\\n\\n### 4. Formatted\\n' + formatted + '\\n\\n### 5. Final Check\\n' + finalResponse + '\\n';\n\nconst statusColor = isApproved ? '#22c55e' : '#f59e0b';\nconst statusBg = isApproved ? '#052e16' : '#1c1208';\n\nconst esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n\nconst html = '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">'\n  + '<html xmlns=\"http://www.w3.org/1999/xhtml\"><head>'\n  + '<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">'\n  + '<title>LinkedIn Draft</title></head>'\n  + '<body style=\"margin:0; padding:0; background-color:#0a0f1a;\">'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0a0f1a;\">'\n  + '<tr><td align=\"center\" style=\"padding:20px 0;\">'\n  + '<table width=\"660\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:660px; width:100%;\">'\n  + '<tr><td style=\"background-color:#0f1b2d; padding:36px 32px 28px 32px; border-bottom:3px solid #2563eb;\">'\n  + '<div style=\"font-size:12px; color:#60a5fa; text-transform:uppercase; letter-spacing:3px; font-weight:bold; margin-bottom:10px; font-family:Arial,sans-serif;\">LinkedIn Draft</div>'\n  + '<h1 style=\"color:#f1f5f9; font-size:22px; margin:0 0 8px 0; font-weight:bold; font-family:Arial,sans-serif;\">' + esc(topic) + '</h1>'\n  + '<div style=\"color:#94a3b8; font-size:13px; font-family:Arial,sans-serif;\">' + dateLabel + '</div>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:' + statusBg + '; padding:16px 32px; border-bottom:1px solid #1e3a5f;\">'\n  + '<span style=\"color:' + statusColor + '; font-family:Arial,sans-serif; font-size:14px; font-weight:bold;\">&#9679; ' + esc(status) + '</span>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:#111827; padding:28px 32px;\">'\n  + '<h2 style=\"color:#93c5fd; font-size:16px; margin:0 0 16px 0; font-family:Arial,sans-serif;\">Final Post</h2>'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>'\n  + '<td width=\"4\" style=\"background-color:#2563eb;\"></td>'\n  + '<td style=\"padding:16px 20px; background-color:#0f1f38; font-family:Arial,sans-serif; font-size:14px; color:#e2e8f0; line-height:1.7;\">' + esc(finalPost) + '</td>'\n  + '</tr></table>'\n  + '<br><h2 style=\"color:#93c5fd; font-size:16px; margin:24px 0 12px 0; font-family:Arial,sans-serif;\">Critic Feedback</h2>'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>'\n  + '<td width=\"4\" style=\"background-color:#f59e0b;\"></td>'\n  + '<td style=\"padding:16px 20px; background-color:#1c1a0f; font-family:Arial,sans-serif; font-size:13px; color:#cbd5e1; line-height:1.6;\">' + esc(critique) + '</td>'\n  + '</tr></table>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:#0a0f1a; padding:20px 32px; border-top:1px solid #1e3a5f; text-align:center; font-family:Arial,sans-serif;\">'\n  + '<div style=\"color:#64748b; font-size:12px;\">my-media-helper</div>'\n  + '</td></tr>'\n  + '</table></td></tr></table></body></html>';\n\nconst buffer = Buffer.from(markdown, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, 'draft-' + timestamp + '.md', 'text/markdown');\n\nreturn [{ json: { markdown, html, finalPost, status, topic, timestamp }, binary: { data: binaryData } }];"
+      },
+      "id": "dd000001-0013-4000-8000-000000000013",
+      "name": "Prepare Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2640, 0]
+    },
+    {
+      "parameters": {
+        "fileName": "=/home/node/output/my-media-helper/drafts/draft-{{ $json.timestamp }}.md",
+        "dataPropertyName": "data"
+      },
+      "id": "dd000001-0014-4000-8000-000000000014",
+      "name": "Save Draft",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [2860, -80]
+    },
+    {
+      "parameters": {
+        "fromEmail": "petri.sandholm@gmail.com",
+        "sendTo": "petri.sandholm@gmail.com",
+        "subject": "=LinkedIn Draft: {{ $('Prepare Output').first().json.topic }}",
+        "emailType": "html",
+        "html": "={{ $('Prepare Output').first().json.html }}",
+        "options": {}
+      },
+      "id": "dd000001-0015-4000-8000-000000000015",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2860, 80],
+      "credentials": {}
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Load History", "type": "main", "index": 0 }]]
+    },
+    "Load History": {
+      "main": [[{ "node": "Draft Build", "type": "main", "index": 0 }]]
+    },
+    "Draft Build": {
+      "main": [[{ "node": "Draft Claude", "type": "main", "index": 0 }]]
+    },
+    "Draft Claude": {
+      "main": [[{ "node": "Critic Build", "type": "main", "index": 0 }]]
+    },
+    "Critic Build": {
+      "main": [[{ "node": "Critic Claude", "type": "main", "index": 0 }]]
+    },
+    "Critic Claude": {
+      "main": [[{ "node": "Finetune Build", "type": "main", "index": 0 }]]
+    },
+    "Finetune Build": {
+      "main": [[{ "node": "Finetune Claude", "type": "main", "index": 0 }]]
+    },
+    "Finetune Claude": {
+      "main": [[{ "node": "Prepare Build", "type": "main", "index": 0 }]]
+    },
+    "Prepare Build": {
+      "main": [[{ "node": "Prepare Claude", "type": "main", "index": 0 }]]
+    },
+    "Prepare Claude": {
+      "main": [[{ "node": "Final Check Build", "type": "main", "index": 0 }]]
+    },
+    "Final Check Build": {
+      "main": [[{ "node": "Final Check Claude", "type": "main", "index": 0 }]]
+    },
+    "Final Check Claude": {
+      "main": [[{ "node": "Prepare Output", "type": "main", "index": 0 }]]
+    },
+    "Prepare Output": {
+      "main": [[
+        { "node": "Save Draft", "type": "main", "index": 0 },
+        { "node": "Send Email", "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "pinData": {}
+}
