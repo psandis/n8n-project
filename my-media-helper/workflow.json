@@ -5,9 +5,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "my-media-helper",
-        "options": {
-          "rawBody": true
-        }
+        "options": { "rawBody": true }
       },
       "id": "dd000001-0001-4000-8000-000000000001",
       "name": "Webhook",
@@ -18,7 +16,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first();\nconst body = input.json.body || {};\nconst topic = (typeof body === 'object' ? body.topic : '') || input.json.topic || '';\n\nif (!topic || topic.trim().length < 3) {\n  throw new Error('No topic provided. POST JSON with topic field.');\n}\n\nconst fs = require('fs');\nconst pathLib = require('path');\nconst publishedDir = '/home/node/output/my-media-helper/published';\nlet posts = [];\nlet historyText = '';\n\ntry {\n  const files = fs.readdirSync(publishedDir).filter(f => f.endsWith('.md')).sort();\n  for (const file of files) {\n    const content = fs.readFileSync(pathLib.join(publishedDir, file), 'utf-8').trim();\n    if (content) posts.push({ file, content });\n  }\n  if (posts.length > 0) {\n    historyText = posts.map((p, i) => '--- Post ' + (i + 1) + ' (' + p.file + ') ---\\n' + p.content).join('\\n\\n');\n  }\n} catch (e) {\n  historyText = '';\n}\n\nreturn [{ json: { topic: topic.trim(), posts, historyText } }];"
+        "jsCode": "const input = $input.first();\nconst body = input.json.body || {};\nconst topic = (typeof body === 'object' ? body.topic : '') || '';\nconst story = (typeof body === 'object' ? body.story : '') || '';\nconst audience = (typeof body === 'object' ? body.audience : '') || 'tech professionals';\nconst email = (typeof body === 'object' ? body.email : '') || 'petri.sandholm@gmail.com';\n\nif (!topic || topic.trim().length < 3) {\n  throw new Error('No topic. POST JSON with topic, story, and audience fields.');\n}\nif (!story || story.trim().length < 10) {\n  throw new Error('No story. Add real context in the story field (2-3 sentences minimum).');\n}\n\nconst fs = require('fs');\nconst pathLib = require('path');\nconst publishedDir = '/home/node/output/my-media-helper/published';\nlet posts = [];\nlet historyText = '';\n\ntry {\n  const files = fs.readdirSync(publishedDir).filter(f => f.endsWith('.md')).sort();\n  for (const file of files) {\n    const content = fs.readFileSync(pathLib.join(publishedDir, file), 'utf-8').trim();\n    if (content) posts.push({ file, content });\n  }\n  if (posts.length > 0) {\n    historyText = posts.map((p, i) => '--- Post ' + (i + 1) + ' (' + p.file + ') ---\\n' + p.content).join('\\n\\n');\n  }\n} catch (e) {\n  historyText = '';\n}\n\nreturn [{ json: { topic: topic.trim(), story: story.trim(), audience: audience.trim(), email: email.trim(), posts, historyText } }];"
       },
       "id": "dd000001-0002-4000-8000-000000000002",
       "name": "Load History",
@@ -28,10 +26,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $('Load History').first().json;\nconst topic = data.topic;\nconst historyText = data.historyText;\n\nconst historySection = historyText\n  ? 'Published posts by this author. Match the voice, tone, and style exactly:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Write a LinkedIn post about this topic:\\n\\n'\n  + topic\n  + '\\n\\nVoice rules:\\n- Direct and confident, no hedging or filler\\n- Share specific details, tools, or numbers when relevant\\n- Professional but conversational, not corporate or stiff\\n- First person\\n- Appropriate length for the content (can be short 3-5 lines or medium 10-15 lines)\\n- Do not always end with a question or call to action\\n- No AI-sounding phrases or excessive enthusiasm\\n\\nOutput only the post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, topic, historyText } }];"
+        "jsCode": "const data = $('Load History').first().json;\nconst topic = data.topic;\nconst story = data.story;\nconst audience = data.audience;\nconst historyText = data.historyText;\n\nconst voiceSection = historyText\n  ? 'Published posts by this author (study the voice and style):\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = voiceSection\n  + 'Extract the key building blocks from this professional experience for a LinkedIn post.\\n\\n'\n  + 'TOPIC: ' + topic + '\\n'\n  + 'EXPERIENCE/STORY: ' + story + '\\n'\n  + 'AUDIENCE: ' + audience + '\\n\\n'\n  + 'Extract and return as JSON only:\\n'\n  + '{\\n'\n  + '  \"hook\": \"one opening line under 10 words that creates curiosity or tension\",\\n'\n  + '  \"conflict\": \"the specific challenge or tension in 1-2 sentences with real details\",\\n'\n  + '  \"shift\": \"the realization or turning point in 1 sentence\",\\n'\n  + '  \"lesson\": \"the single key insight or takeaway in 1 sentence\",\\n'\n  + '  \"proof\": \"a specific detail, number, tool, or outcome that makes this credible\",\\n'\n  + '  \"question\": \"one question to end the post that invites comments\"\\n'\n  + '}\\n\\n'\n  + 'Use actual details from the story. Do not generalize. Output only the JSON.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 512,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, topic, story, audience, historyText } }];"
       },
       "id": "dd000001-0003-4000-8000-000000000003",
-      "name": "Draft Build",
+      "name": "Story Extractor Build",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [440, 0]
@@ -55,7 +53,7 @@
         "options": {}
       },
       "id": "dd000001-0004-4000-8000-000000000004",
-      "name": "Draft Claude",
+      "name": "Story Extractor Claude",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [660, 0],
@@ -63,10 +61,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const draft = $input.first().json.content[0].text;\nconst historyText = $('Load History').first().json.historyText;\n\nconst historySection = historyText\n  ? 'Author published posts for reference:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Critically review this LinkedIn post draft:\\n\\n'\n  + draft\n  + '\\n\\nGive specific numbered feedback (max 8 points) on:\\n- Does it match the author voice (direct, specific, not generic)?\\n- Any phrases that sound AI-generated or corporate?\\n- Is the content specific enough or too vague?\\n- Is the structure and length appropriate for the content?\\n- Any missed opportunities to add a real detail or perspective?\\n\\nBe direct and specific. Output only the numbered critique, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft } }];"
+        "jsCode": "const claudeResponse = $input.first().json.content[0].text;\nconst extractor = $('Story Extractor Build').first().json;\nconst historyText = extractor.historyText;\nconst topic = extractor.topic;\nconst audience = extractor.audience;\nconst story = extractor.story;\n\nlet elements;\ntry {\n  const jsonMatch = claudeResponse.match(/\\{[\\s\\S]+\\}/);\n  elements = JSON.parse(jsonMatch ? jsonMatch[0] : claudeResponse);\n} catch (e) {\n  elements = {\n    hook: topic,\n    conflict: story,\n    shift: 'The perspective shifted after experiencing this directly.',\n    lesson: 'The real lesson was in the details.',\n    proof: story,\n    question: 'What has been your experience with this?'\n  };\n}\n\nconst voiceSection = historyText\n  ? 'Match this author voice exactly - study these published posts:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = voiceSection\n  + 'Write a LinkedIn post using the SLA framework: Story, Lesson, Application.\\n\\n'\n  + 'Use these content elements:\\n'\n  + 'Hook (first line, under 10 words): ' + elements.hook + '\\n'\n  + 'Story/Conflict: ' + elements.conflict + '\\n'\n  + 'Shift: ' + elements.shift + '\\n'\n  + 'Lesson: ' + elements.lesson + '\\n'\n  + 'Proof: ' + elements.proof + '\\n'\n  + 'Closing question: ' + elements.question + '\\n\\n'\n  + 'Structure:\\n'\n  + '1. Open with the hook\\n'\n  + '2. Tell the story with specific details (3-5 lines)\\n'\n  + '3. State the lesson (2-3 lines)\\n'\n  + '4. Show how to apply it (2-3 lines)\\n'\n  + '5. End with the closing question\\n\\n'\n  + 'Hard requirements:\\n'\n  + '- 1300-1600 characters total\\n'\n  + '- Short paragraphs, 1-3 lines max, blank line between each\\n'\n  + '- No corporate words: leverage, utilize, delve, synergy\\n'\n  + '- No external links\\n'\n  + '- First person, do not start with the word I\\n\\n'\n  + 'Output only the post text.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, elements, topic, historyText, audience } }];"
       },
       "id": "dd000001-0005-4000-8000-000000000005",
-      "name": "Critic Build",
+      "name": "Draft 1 Build",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [880, 0]
@@ -90,7 +88,7 @@
         "options": {}
       },
       "id": "dd000001-0006-4000-8000-000000000006",
-      "name": "Critic Claude",
+      "name": "Draft 1 Claude",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1100, 0],
@@ -98,10 +96,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const critique = $input.first().json.content[0].text;\nconst draft = $('Critic Build').first().json.draft;\n\nconst prompt = 'Rewrite this LinkedIn post based on the critic feedback. Address each point. Keep what already works well.\\n\\nORIGINAL DRAFT:\\n' + draft + '\\n\\nCRITIC FEEDBACK:\\n' + critique + '\\n\\nOutput only the revised post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft, critique } }];"
+        "jsCode": "const draft1 = $input.first().json.content[0].text;\nconst d1 = $('Draft 1 Build').first().json;\nconst elements = d1.elements;\nconst historyText = d1.historyText;\nconst topic = d1.topic;\n\nconst voiceSection = historyText\n  ? 'Match this author voice exactly - study these published posts:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = voiceSection\n  + 'Write a LinkedIn post using the MRS framework: Mistake, Realization, Shift.\\n\\n'\n  + 'Use these content elements:\\n'\n  + 'Hook (first line, bold admission or mistake, under 10 words): ' + elements.hook + '\\n'\n  + 'The mistake or wrong assumption: ' + elements.conflict + '\\n'\n  + 'The realization: ' + elements.shift + '\\n'\n  + 'What changed and why it matters: ' + elements.lesson + '\\n'\n  + 'Proof/evidence: ' + elements.proof + '\\n'\n  + 'Closing question: ' + elements.question + '\\n\\n'\n  + 'Structure:\\n'\n  + '1. Open with a bold admission of a mistake or wrong assumption\\n'\n  + '2. Describe the mistake with specific details (2-3 lines)\\n'\n  + '3. The moment of realization (2-3 lines)\\n'\n  + '4. What shifted and why it matters (3-4 lines)\\n'\n  + '5. End with the closing question\\n\\n'\n  + 'Hard requirements:\\n'\n  + '- 1300-1600 characters total\\n'\n  + '- Short paragraphs, 1-3 lines max, blank line between each\\n'\n  + '- No corporate words: leverage, utilize, delve, synergy\\n'\n  + '- No external links\\n'\n  + '- First person, do not start with the word I\\n\\n'\n  + 'Output only the post text.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft1, elements, topic, historyText } }];"
       },
       "id": "dd000001-0007-4000-8000-000000000007",
-      "name": "Finetune Build",
+      "name": "Draft 2 Build",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1320, 0]
@@ -125,7 +123,7 @@
         "options": {}
       },
       "id": "dd000001-0008-4000-8000-000000000008",
-      "name": "Finetune Claude",
+      "name": "Draft 2 Claude",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1540, 0],
@@ -133,10 +131,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const revised = $input.first().json.content[0].text;\nconst critique = $('Finetune Build').first().json.critique;\nconst draft = $('Finetune Build').first().json.draft;\nconst historyText = $('Load History').first().json.historyText;\n\nconst historySection = historyText\n  ? 'Author history posts (check whether hashtags appear in them):\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = historySection\n  + 'Format this post for LinkedIn publishing:\\n\\n'\n  + revised\n  + '\\n\\nFormatting rules:\\n- Add blank lines between paragraphs for readability\\n- Add hashtags at the end ONLY if the author uses hashtags in the history posts. If no hashtags appear in history, add none at all.\\n- Keep under 3000 characters\\n- Do not change the meaning, voice, or content\\n\\nOutput only the formatted post text, nothing else.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, revised, critique, draft } }];"
+        "jsCode": "const draft2 = $input.first().json.content[0].text;\nconst d2 = $('Draft 2 Build').first().json;\nconst draft1 = d2.draft1;\nconst elements = d2.elements;\nconst historyText = d2.historyText;\nconst topic = d2.topic;\n\nconst voiceSection = historyText\n  ? 'Match this author voice exactly - study these published posts:\\n\\n' + historyText + '\\n\\n'\n  : '';\n\nconst prompt = voiceSection\n  + 'Write a LinkedIn post that challenges a common assumption in this field.\\n\\n'\n  + 'Topic: ' + topic + '\\n'\n  + 'Hook (bold contrarian statement under 10 words): ' + elements.hook + '\\n'\n  + 'Story/evidence: ' + elements.conflict + ' ' + elements.shift + '\\n'\n  + 'The contrarian insight: ' + elements.lesson + '\\n'\n  + 'Proof: ' + elements.proof + '\\n'\n  + 'Closing question: ' + elements.question + '\\n\\n'\n  + 'Structure:\\n'\n  + '1. Bold opening statement that challenges conventional thinking\\n'\n  + '2. What most people believe or do (1-2 lines)\\n'\n  + '3. Your story or experience that disproves it (3-4 lines)\\n'\n  + '4. The real insight (2-3 lines)\\n'\n  + '5. End with a provocative question\\n\\n'\n  + 'Hard requirements:\\n'\n  + '- 1300-1600 characters total\\n'\n  + '- Short paragraphs, 1-3 lines max, blank line between each\\n'\n  + '- No corporate words: leverage, utilize, delve, synergy\\n'\n  + '- No external links\\n'\n  + '- First person, do not start with the word I\\n\\n'\n  + 'Output only the post text.';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft1, draft2, elements, topic, historyText } }];"
       },
       "id": "dd000001-0009-4000-8000-000000000009",
-      "name": "Prepare Build",
+      "name": "Draft 3 Build",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1760, 0]
@@ -160,7 +158,7 @@
         "options": {}
       },
       "id": "dd000001-0010-4000-8000-000000000010",
-      "name": "Prepare Claude",
+      "name": "Draft 3 Claude",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1980, 0],
@@ -168,10 +166,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const formatted = $input.first().json.content[0].text;\nconst revised = $('Prepare Build').first().json.revised;\n\nconst prompt = 'Final quality check for this LinkedIn post:\\n\\n'\n  + formatted\n  + '\\n\\nCheck: reads naturally (not AI-written), specific and authentic, no typos or awkward phrasing, LinkedIn-appropriate length and format.\\n\\nOutput format (strict):\\nSTATUS: APPROVED\\nor\\nSTATUS: NEEDS REVISION: [one sentence why]\\n\\nThen on a new line:\\nFINAL POST:\\n[post text, with any corrections applied]';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1024,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, formatted, revised } }];"
+        "jsCode": "const draft3 = $input.first().json.content[0].text;\nconst d3 = $('Draft 3 Build').first().json;\nconst draft1 = d3.draft1;\nconst draft2 = d3.draft2;\nconst elements = d3.elements;\nconst topic = d3.topic;\n\nconst checklist = '1. Hook under 10 words (yes/no)\\n'\n  + '2. First 140 characters hooks before see more (yes/no)\\n'\n  + '3. Total length 1300-1600 characters (yes/no + actual count)\\n'\n  + '4. Paragraphs 1-3 lines max (yes/no)\\n'\n  + '5. No corporate buzzwords: leverage, utilize, delve, synergy (yes/no)\\n'\n  + '6. Personal story or specific proof present (yes/no)\\n'\n  + '7. Ends with a question (yes/no)\\n'\n  + '8. No external links (yes/no)\\n'\n  + '9. Reads like a human, not AI (yes/no)\\n';\n\nconst prompt = 'Score these 3 LinkedIn post drafts against this exact checklist.\\n\\n'\n  + 'CHECKLIST:\\n' + checklist + '\\n'\n  + 'DRAFT 1 (SLA - Story, Lesson, Application):\\n' + draft1 + '\\n\\n'\n  + 'DRAFT 2 (MRS - Mistake, Realization, Shift):\\n' + draft2 + '\\n\\n'\n  + 'DRAFT 3 (Contrarian):\\n' + draft3 + '\\n\\n'\n  + 'For each draft output exactly:\\n'\n  + 'DRAFT [N]: [score]/10\\n'\n  + '[checklist item]: [yes/no]\\n'\n  + '(repeat for all 9 checklist items)\\n'\n  + 'IMPROVE: [2-3 specific improvements]\\n\\n'\n  + 'End with:\\n'\n  + 'BEST: Draft [1/2/3] - [one sentence why]';\n\nconst body = {\n  model: 'claude-haiku-4-5-20251001',\n  max_tokens: 1500,\n  messages: [{ role: 'user', content: prompt }]\n};\n\nreturn [{ json: { body, draft1, draft2, draft3, elements, topic } }];"
       },
       "id": "dd000001-0011-4000-8000-000000000011",
-      "name": "Final Check Build",
+      "name": "Critic Build",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [2200, 0]
@@ -195,7 +193,7 @@
         "options": {}
       },
       "id": "dd000001-0012-4000-8000-000000000012",
-      "name": "Final Check Claude",
+      "name": "Critic Claude",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [2420, 0],
@@ -203,7 +201,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const finalResponse = $input.first().json.content[0].text;\nconst topic = $('Load History').first().json.topic;\n\nconst statusMatch = finalResponse.match(/STATUS:\\s*(APPROVED|NEEDS REVISION[^\\n]*)/i);\nconst status = statusMatch ? statusMatch[1].trim() : 'UNKNOWN';\nconst isApproved = status.startsWith('APPROVED');\n\nconst finalPostMatch = finalResponse.match(/FINAL POST:\\s*([\\s\\S]+)/i);\nconst finalPost = finalPostMatch ? finalPostMatch[1].trim() : $('Final Check Build').first().json.formatted;\n\nconst draft = $('Critic Build').first().json.draft;\nconst critique = $('Finetune Build').first().json.critique;\nconst revised = $('Prepare Build').first().json.revised;\nconst formatted = $('Final Check Build').first().json.formatted;\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nconst markdown = '# LinkedIn Post Draft\\n**Topic:** ' + topic + '\\n**Date:** ' + dateLabel + '\\n**Status:** ' + status + '\\n\\n## Final Post\\n\\n' + finalPost + '\\n\\n---\\n\\n## Agent Trail\\n\\n### 1. Draft\\n' + draft + '\\n\\n### 2. Critic Feedback\\n' + critique + '\\n\\n### 3. Revised\\n' + revised + '\\n\\n### 4. Formatted\\n' + formatted + '\\n\\n### 5. Final Check\\n' + finalResponse + '\\n';\n\nconst statusColor = isApproved ? '#22c55e' : '#f59e0b';\nconst statusBg = isApproved ? '#052e16' : '#1c1208';\n\nconst esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');\n\nconst html = '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">'\n  + '<html xmlns=\"http://www.w3.org/1999/xhtml\"><head>'\n  + '<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">'\n  + '<title>LinkedIn Draft</title></head>'\n  + '<body style=\"margin:0; padding:0; background-color:#0a0f1a;\">'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#0a0f1a;\">'\n  + '<tr><td align=\"center\" style=\"padding:20px 0;\">'\n  + '<table width=\"660\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:660px; width:100%;\">'\n  + '<tr><td style=\"background-color:#0f1b2d; padding:36px 32px 28px 32px; border-bottom:3px solid #2563eb;\">'\n  + '<div style=\"font-size:12px; color:#60a5fa; text-transform:uppercase; letter-spacing:3px; font-weight:bold; margin-bottom:10px; font-family:Arial,sans-serif;\">LinkedIn Draft</div>'\n  + '<h1 style=\"color:#f1f5f9; font-size:22px; margin:0 0 8px 0; font-weight:bold; font-family:Arial,sans-serif;\">' + esc(topic) + '</h1>'\n  + '<div style=\"color:#94a3b8; font-size:13px; font-family:Arial,sans-serif;\">' + dateLabel + '</div>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:' + statusBg + '; padding:16px 32px; border-bottom:1px solid #1e3a5f;\">'\n  + '<span style=\"color:' + statusColor + '; font-family:Arial,sans-serif; font-size:14px; font-weight:bold;\">&#9679; ' + esc(status) + '</span>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:#111827; padding:28px 32px;\">'\n  + '<h2 style=\"color:#93c5fd; font-size:16px; margin:0 0 16px 0; font-family:Arial,sans-serif;\">Final Post</h2>'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>'\n  + '<td width=\"4\" style=\"background-color:#2563eb;\"></td>'\n  + '<td style=\"padding:16px 20px; background-color:#0f1f38; font-family:Arial,sans-serif; font-size:14px; color:#e2e8f0; line-height:1.7;\">' + esc(finalPost) + '</td>'\n  + '</tr></table>'\n  + '<br><h2 style=\"color:#93c5fd; font-size:16px; margin:24px 0 12px 0; font-family:Arial,sans-serif;\">Critic Feedback</h2>'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>'\n  + '<td width=\"4\" style=\"background-color:#f59e0b;\"></td>'\n  + '<td style=\"padding:16px 20px; background-color:#1c1a0f; font-family:Arial,sans-serif; font-size:13px; color:#cbd5e1; line-height:1.6;\">' + esc(critique) + '</td>'\n  + '</tr></table>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:#0a0f1a; padding:20px 32px; border-top:1px solid #1e3a5f; text-align:center; font-family:Arial,sans-serif;\">'\n  + '<div style=\"color:#64748b; font-size:12px;\">my-media-helper</div>'\n  + '</td></tr>'\n  + '</table></td></tr></table></body></html>';\n\nconst buffer = Buffer.from(markdown, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, 'draft-' + timestamp + '.md', 'text/markdown');\n\nreturn [{ json: { markdown, html, finalPost, status, topic, timestamp }, binary: { data: binaryData } }];"
+        "jsCode": "const criticResponse = $input.first().json.content[0].text;\nconst cb = $('Critic Build').first().json;\nconst draft1 = cb.draft1;\nconst draft2 = cb.draft2;\nconst draft3 = cb.draft3;\nconst topic = cb.topic;\n\nconst timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\nconst dateLabel = new Date().toISOString().split('T')[0];\n\nconst bestMatch = criticResponse.match(/BEST:\\s*Draft\\s*([123])/i);\nconst bestDraft = bestMatch ? bestMatch[1] : '1';\n\nconst s1 = (criticResponse.match(/DRAFT\\s*1[^:]*:\\s*(\\d+)\\/10/i) || [])[1] || '?';\nconst s2 = (criticResponse.match(/DRAFT\\s*2[^:]*:\\s*(\\d+)\\/10/i) || [])[1] || '?';\nconst s3 = (criticResponse.match(/DRAFT\\s*3[^:]*:\\s*(\\d+)\\/10/i) || [])[1] || '?';\n\nconst c1 = draft1.length;\nconst c2 = draft2.length;\nconst c3 = draft3.length;\n\nconst markdown = '# LinkedIn Post Drafts\\n'\n  + '**Topic:** ' + topic + '\\n'\n  + '**Date:** ' + dateLabel + '\\n'\n  + '**Recommended:** Draft ' + bestDraft + '\\n\\n'\n  + '## Draft 1 - SLA (Story, Lesson, Application) - Score: ' + s1 + '/10\\n\\n'\n  + draft1 + '\\n\\n'\n  + '## Draft 2 - MRS (Mistake, Realization, Shift) - Score: ' + s2 + '/10\\n\\n'\n  + draft2 + '\\n\\n'\n  + '## Draft 3 - Contrarian - Score: ' + s3 + '/10\\n\\n'\n  + draft3 + '\\n\\n'\n  + '---\\n\\n## Critic Evaluation\\n\\n' + criticResponse + '\\n';\n\nconst esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst escPost = (s) => esc(s).replace(/\\n/g, '<br>');\nconst escCritic = (s) => esc(s).replace(/\\n/g, '<br>');\n\nconst scoreBadge = (score, isRec) => {\n  const bg = isRec ? '#16a34a' : (parseInt(score) >= 7 ? '#2563eb' : '#6b7280');\n  return '<span style=\"background-color:' + bg + '; color:#ffffff; font-family:Arial,sans-serif; font-size:11px; font-weight:bold; padding:2px 8px;\">'\n    + score + '/10' + (isRec ? ' - RECOMMENDED' : '') + '</span>';\n};\n\nconst draftBlock = (num, framework, draft, score, chars) => {\n  const isRec = String(num) === bestDraft;\n  const border = isRec ? '2px solid #16a34a' : '1px solid #e5e7eb';\n  return '<tr><td style=\"padding:0 0 20px 0;\">'\n    + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border:' + border + ';\">'\n    + '<tr><td style=\"background-color:#f9fafb; padding:10px 18px; border-bottom:1px solid #e5e7eb;\">'\n    + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr>'\n    + '<td><span style=\"font-family:Arial,sans-serif; font-size:13px; font-weight:bold; color:#111827;\">Version ' + num + ': ' + framework + '</span>'\n    + '<span style=\"font-family:Arial,sans-serif; font-size:11px; color:#9ca3af; margin-left:8px;\">' + chars + ' chars</span></td>'\n    + '<td align=\"right\">' + scoreBadge(score, isRec) + '</td>'\n    + '</tr></table>'\n    + '</td></tr>'\n    + '<tr><td style=\"padding:16px 18px; background-color:#ffffff; font-family:Arial,sans-serif; font-size:14px; color:#111827; line-height:1.8;\">'\n    + escPost(draft)\n    + '</td></tr>'\n    + '</table>'\n    + '</td></tr>';\n};\n\nconst html = '<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">'\n  + '<html xmlns=\"http://www.w3.org/1999/xhtml\"><head>'\n  + '<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">'\n  + '<title>LinkedIn Drafts</title></head>'\n  + '<body style=\"margin:0; padding:0; background-color:#f3f4f6;\">'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background-color:#f3f4f6;\"><tr><td align=\"center\" style=\"padding:24px 12px;\">'\n  + '<table width=\"620\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:620px; width:100%; background-color:#ffffff;\">'\n  + '<tr><td style=\"background-color:#0a66c2; padding:22px 28px;\">'\n  + '<div style=\"color:#ffffff; font-size:11px; font-family:Arial,sans-serif; opacity:0.8; margin-bottom:4px;\">' + dateLabel + ' - 3 drafts</div>'\n  + '<div style=\"color:#ffffff; font-size:19px; font-weight:bold; font-family:Arial,sans-serif;\">' + esc(topic) + '</div>'\n  + '</td></tr>'\n  + '<tr><td style=\"background-color:#f0fdf4; padding:12px 28px; border-bottom:1px solid #e5e7eb;\">'\n  + '<span style=\"color:#16a34a; font-family:Arial,sans-serif; font-size:13px; font-weight:bold;\">Recommended: Version ' + bestDraft + '</span>'\n  + '<span style=\"color:#6b7280; font-family:Arial,sans-serif; font-size:13px;\"> - all 3 versions below, pick one</span>'\n  + '</td></tr>'\n  + '<tr><td style=\"padding:22px 28px 4px 28px;\">'\n  + '<div style=\"font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:1px; font-family:Arial,sans-serif; margin-bottom:16px;\">3 versions - pick one to post</div>'\n  + '<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">'\n  + draftBlock(1, 'Story, Lesson, Application', draft1, s1, c1)\n  + draftBlock(2, 'Mistake, Realization, Shift', draft2, s2, c2)\n  + draftBlock(3, 'Contrarian', draft3, s3, c3)\n  + '</table>'\n  + '</td></tr>'\n  + '<tr><td style=\"padding:0 28px 24px 28px;\">'\n  + '<div style=\"font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:1px; font-family:Arial,sans-serif; margin-bottom:10px; margin-top:4px;\">Critic evaluation</div>'\n  + '<div style=\"background-color:#f9fafb; padding:14px 16px; font-family:Arial,sans-serif; font-size:12px; color:#374151; line-height:1.7; border:1px solid #e5e7eb;\">'\n  + escCritic(criticResponse)\n  + '</div>'\n  + '</td></tr>'\n  + '<tr><td style=\"padding:12px 28px; background-color:#f9fafb; border-top:1px solid #e5e7eb; text-align:center;\">'\n  + '<div style=\"color:#9ca3af; font-size:11px; font-family:Arial,sans-serif;\">my-media-helper</div>'\n  + '</td></tr>'\n  + '</table></td></tr></table></body></html>';\n\nconst email = $('Load History').first().json.email || 'petri.sandholm@gmail.com';\n\nconst buffer = Buffer.from(markdown, 'utf-8');\nconst binaryData = await this.helpers.prepareBinaryData(buffer, 'draft-' + timestamp + '.md', 'text/markdown');\n\nreturn [{ json: { markdown, html, topic, timestamp, bestDraft, s1, s2, s3, email }, binary: { data: binaryData } }];"
       },
       "id": "dd000001-0013-4000-8000-000000000013",
       "name": "Prepare Output",
@@ -225,8 +223,8 @@
     {
       "parameters": {
         "fromEmail": "petri.sandholm@gmail.com",
-        "sendTo": "petri.sandholm@gmail.com",
-        "subject": "=LinkedIn Draft: {{ $('Prepare Output').first().json.topic }}",
+        "sendTo": "={{ $('Prepare Output').first().json.email }}",
+        "subject": "=LinkedIn Drafts: {{ $('Prepare Output').first().json.topic }}",
         "emailType": "html",
         "html": "={{ $('Prepare Output').first().json.html }}",
         "options": {}
@@ -240,48 +238,22 @@
     }
   ],
   "connections": {
-    "Webhook": {
-      "main": [[{ "node": "Load History", "type": "main", "index": 0 }]]
-    },
-    "Load History": {
-      "main": [[{ "node": "Draft Build", "type": "main", "index": 0 }]]
-    },
-    "Draft Build": {
-      "main": [[{ "node": "Draft Claude", "type": "main", "index": 0 }]]
-    },
-    "Draft Claude": {
-      "main": [[{ "node": "Critic Build", "type": "main", "index": 0 }]]
-    },
-    "Critic Build": {
-      "main": [[{ "node": "Critic Claude", "type": "main", "index": 0 }]]
-    },
-    "Critic Claude": {
-      "main": [[{ "node": "Finetune Build", "type": "main", "index": 0 }]]
-    },
-    "Finetune Build": {
-      "main": [[{ "node": "Finetune Claude", "type": "main", "index": 0 }]]
-    },
-    "Finetune Claude": {
-      "main": [[{ "node": "Prepare Build", "type": "main", "index": 0 }]]
-    },
-    "Prepare Build": {
-      "main": [[{ "node": "Prepare Claude", "type": "main", "index": 0 }]]
-    },
-    "Prepare Claude": {
-      "main": [[{ "node": "Final Check Build", "type": "main", "index": 0 }]]
-    },
-    "Final Check Build": {
-      "main": [[{ "node": "Final Check Claude", "type": "main", "index": 0 }]]
-    },
-    "Final Check Claude": {
-      "main": [[{ "node": "Prepare Output", "type": "main", "index": 0 }]]
-    },
-    "Prepare Output": {
-      "main": [[
-        { "node": "Save Draft", "type": "main", "index": 0 },
-        { "node": "Send Email", "type": "main", "index": 0 }
-      ]]
-    }
+    "Webhook": { "main": [[{ "node": "Load History", "type": "main", "index": 0 }]] },
+    "Load History": { "main": [[{ "node": "Story Extractor Build", "type": "main", "index": 0 }]] },
+    "Story Extractor Build": { "main": [[{ "node": "Story Extractor Claude", "type": "main", "index": 0 }]] },
+    "Story Extractor Claude": { "main": [[{ "node": "Draft 1 Build", "type": "main", "index": 0 }]] },
+    "Draft 1 Build": { "main": [[{ "node": "Draft 1 Claude", "type": "main", "index": 0 }]] },
+    "Draft 1 Claude": { "main": [[{ "node": "Draft 2 Build", "type": "main", "index": 0 }]] },
+    "Draft 2 Build": { "main": [[{ "node": "Draft 2 Claude", "type": "main", "index": 0 }]] },
+    "Draft 2 Claude": { "main": [[{ "node": "Draft 3 Build", "type": "main", "index": 0 }]] },
+    "Draft 3 Build": { "main": [[{ "node": "Draft 3 Claude", "type": "main", "index": 0 }]] },
+    "Draft 3 Claude": { "main": [[{ "node": "Critic Build", "type": "main", "index": 0 }]] },
+    "Critic Build": { "main": [[{ "node": "Critic Claude", "type": "main", "index": 0 }]] },
+    "Critic Claude": { "main": [[{ "node": "Prepare Output", "type": "main", "index": 0 }]] },
+    "Prepare Output": { "main": [[
+      { "node": "Save Draft", "type": "main", "index": 0 },
+      { "node": "Send Email", "type": "main", "index": 0 }
+    ]] }
   },
   "settings": {
     "executionOrder": "v1",
