@@ -106,6 +106,20 @@ Outputs a score out of 10 per draft, improvement notes, and picks the best.
 - Seed with existing LinkedIn posts as `.md` files - the more the better
 - Only approved/posted content goes into history
 
+### See what drafts exist
+
+```bash
+docker exec aibots-n8n ls /home/node/output/my-media-helper/drafts/
+```
+
+### Move a draft to published
+
+```bash
+docker exec aibots-n8n cp /home/node/output/my-media-helper/drafts/draft-YYYY-MM-DDTHH-MM-SS.md /home/node/output/my-media-helper/published/post-013.md
+```
+
+Name sequentially: `post-013.md`, `post-014.md` etc. Use zero-padded 3-digit numbers to keep ordering consistent.
+
 ## Server directories
 
 Create before first run:
